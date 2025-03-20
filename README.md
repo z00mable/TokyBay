@@ -48,6 +48,7 @@ Open terminal and go to desired clone directory, then run:
 git clone https://https://github.com/z00mable/TokyBay.git
 cd TokyBay
 ```
+
 ### Install dependencies
 ```sh
 dotnet restore
@@ -57,7 +58,13 @@ dotnet restore
 ```sh
 dotnet build
 ```
-### Build the project
+
+### Run the application
 ```sh
-dotnet build
+dotnet run -d "C:\Users\User\Music"
+```
+or
+
+```sh
+dotnet run --direcotry "C:\Users\User\Music"
 ```
