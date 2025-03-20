@@ -7,6 +7,7 @@
 - [Download](#download)
 - [Usage](#Usage)
 - [Installation](#Installation)
+- [Credits](#Credits)
 
 ## Download
 
@@ -68,3 +69,11 @@ or
 ```sh
 dotnet run --direcotry "C:\Users\User\Music"
 ```
+
+## Credits
+
+Inspired by projects from
+
+- Adrian Castro https://github.com/castdrian/audiosnatch
+- Rahatul Ghazi https://github.com/rahaaatul/TokySnatcher
+- nazDridoy https://github.com/nazdridoy/audiobooksnatcher
