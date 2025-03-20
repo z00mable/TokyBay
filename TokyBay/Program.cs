@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Newtonsoft.Json.Linq;
+using Spectre.Console;
 
 class Program
 {
@@ -11,6 +12,9 @@ class Program
     private const string SkipChapter = "https://file.tokybook.com/upload/welcome-you-to-tokybook.mp3";
     private const string SlashReplaceString = " out of ";
     private static string customDownloadFolder = null;
+
+    private static Dictionary<int, (List<string> displayTitles, List<string> urls)> searchCache 
+        = new Dictionary<int, (List<string>, List<string>)>();
 
     static async Task Main(string[] args)
     {
@@ -25,103 +29,122 @@ class Program
         string[] options = { "Search book", "Download from URL", "Exit" };
         while (true)
         {
-            int selected = DisplayMenu("\x1B[4mChoose action:\x1B[0m", options);
+            var selected = DisplayMenu("Choose action:", options);
             switch (selected)
             {
-                case 0:
-                    await SearchBook();
+                case "Search book":
+                    await PromptSearchBook();
                     break;
-                case 1:
+                case "Download from URL":
                     await GetInput();
                     break;
-                case 2:
+                case "Exit":
                     return;
             }
+
         }
     }
 
-    static int DisplayMenu(string prompt, string[] options)
+    static string DisplayMenu(string prompt, string[] options)
     {
-        Console.CursorVisible = false;
-        int currentSelection = 0;
-        ConsoleKey key;
-        do
+        AnsiConsole.Clear();
+        AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
+        AnsiConsole.WriteLine();
+        var selection = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title($"[grey]{prompt}[/]")
+                .AddChoices(options)
+        );
+        return selection;
+    }
+
+    static async Task PromptSearchBook()
+    {
+        AnsiConsole.Clear();
+        AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
+        AnsiConsole.WriteLine();
+        string query = AnsiConsole.Ask<string>("Enter search query:");
+        searchCache.Clear();
+        await SearchBook(query, 1);
+    }
+
+    static async Task SearchBook(string query, int page)
+    {
+        List<string> displayTitles;
+        List<string> urls;
+
+        if (searchCache.ContainsKey(page))
         {
-            Console.Clear();
-            Console.ForegroundColor = ConsoleColor.Blue;
-            Console.WriteLine("\x1b[3mWelcome to TokyBay\x1b[0m");
-            Console.WriteLine();
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine(prompt);
-            Console.WriteLine();
-            for (int i = 0; i < options.Length; i++)
-            {
-                if (i == currentSelection)
+            (displayTitles, urls) = searchCache[page];
+        }
+        else
+        {
+            string url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
+            string html = string.Empty;
+
+            await AnsiConsole.Status()
+                .StartAsync("Searching...", async ctx =>
                 {
-                    Console.BackgroundColor = ConsoleColor.Gray;
-                    Console.ForegroundColor = ConsoleColor.Black;
+                    html = await httpClient.GetStringAsync(url);
+                });
+
+            var htmlDoc = new HtmlDocument();
+            htmlDoc.LoadHtml(html);
+
+            var titleNodes = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
+            displayTitles = new List<string>();
+            urls = new List<string>();
+
+            if (titleNodes != null)
+            {
+                foreach (var node in titleNodes)
+                {
+                    displayTitles.Add(WebUtility.HtmlDecode(node.InnerText));
+                    urls.Add(node.GetAttributeValue("href", ""));
                 }
-                Console.WriteLine(options[i]);
-                Console.ResetColor();
             }
-            ConsoleKeyInfo keyInfo = Console.ReadKey(true);
-            key = keyInfo.Key;
-            if (key == ConsoleKey.UpArrow)
-                currentSelection = (currentSelection == 0) ? options.Length - 1 : currentSelection - 1;
-            else if (key == ConsoleKey.DownArrow)
-                currentSelection = (currentSelection + 1) % options.Length;
-        } while (key != ConsoleKey.Enter);
 
-        Console.CursorVisible = false;
-        return currentSelection;
-    }
+            var nextPageNode = htmlDoc.DocumentNode.SelectSingleNode("//a[contains(@class, 'next page-numbers')]");
+            if (nextPageNode != null)
+            {
+                displayTitles.Add("[green]Next page[/]");
+                urls.Add("next");
+            }
+            if (page > 1)
+            {
+                displayTitles.Add("[green]Previous page[/]");
+                urls.Add("previous");
+            }
+            displayTitles.Add("[red]Exit[/]");
+            urls.Add("exit");
 
-    static async Task SearchBook()
-    {
-        Console.Clear();
-        Console.Write("Enter search query: ");
-        string query = Console.ReadLine();
-        string url = $"https://tokybook.com/?s={Uri.EscapeDataString(query)}";
+            searchCache[page] = (displayTitles, urls);
+        }
 
-        string html = await httpClient.GetStringAsync(url);
-        var htmlDoc = new HtmlDocument();
-        htmlDoc.LoadHtml(html);
-
-        var titles = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
-        if (titles == null)
-        {
-            Console.WriteLine("No results found.");
-            Console.ReadKey();
+        var selection = DisplayMenu("Select a book:", displayTitles.ToArray());
+        if (selection == "[red]Exit[/]")
             return;
-        }
-
-        List<string> urls = new List<string>();
-        List<string> displayTitles = new List<string>();
-        foreach (var title in titles)
+        else if (selection == "[green]Next page[/]")
+            await SearchBook(query, page + 1);
+        else if (selection == "[green]Previous page[/]")
+            await SearchBook(query, page - 1);
+        else
         {
-            displayTitles.Add(WebUtility.HtmlDecode(title.InnerText));
-            urls.Add(title.GetAttributeValue("href", ""));
+            int selectedIndex = displayTitles.IndexOf(selection);
+            await GetChapters(urls[selectedIndex]);
         }
-
-        displayTitles.Add("Exit");
-        int selected = DisplayMenu("Select a book:", displayTitles.ToArray());
-        if (selected == displayTitles.Count - 1) 
-        { 
-            return; 
-        }
-
-        await GetChapters(urls[selected]);
     }
 
     static async Task GetInput()
     {
-        Console.Clear();
-        Console.Write("Enter URL: ");
-        string url = Console.ReadLine();
+        AnsiConsole.Clear();
+        AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
+        AnsiConsole.WriteLine();
+        string url = AnsiConsole.Ask<string>("Enter URL:");
         if (!url.StartsWith("https://tokybook.com/"))
         {
-            Console.WriteLine("Invalid URL!");
-            Console.ReadKey();
+            AnsiConsole.MarkupLine("[red]Invalid URL![/]");
+            AnsiConsole.Console.Input.ReadKey(false);
             return;
         }
         await GetChapters(url);
@@ -129,14 +152,21 @@ class Program
 
     static async Task GetChapters(string bookUrl)
     {
-        string html = await httpClient.GetStringAsync(bookUrl);
+        string html = string.Empty;
+        await AnsiConsole.Status()
+                .StartAsync("Preparing download...", async ctx =>
+                {
+                    html = await httpClient.GetStringAsync(bookUrl);
+                });
+
         var htmlDoc = new HtmlDocument();
         htmlDoc.LoadHtml(html);
 
         var scripts = htmlDoc.DocumentNode.SelectNodes("//script");
         if (scripts == null)
         {
-            Console.WriteLine("No tracks found.");
+            AnsiConsole.MarkupLine("[red]No tracks found.[/]");
+            AnsiConsole.Ask<string>("Press Enter to continue");
             return;
         }
 
@@ -153,7 +183,8 @@ class Program
 
         if (string.IsNullOrEmpty(jsonString))
         {
-            Console.WriteLine("No valid track information found.");
+            AnsiConsole.MarkupLine("[red]No valid track information found.[/]");
+            AnsiConsole.Ask<string>("Press Enter to continue");
             return;
         }
 
@@ -170,7 +201,7 @@ class Program
 
         string folderBase = customDownloadFolder ?? Directory.GetCurrentDirectory();
         Uri bookUri = new Uri(bookUrl);
-        string folderPath = bookUri.Segments != null && bookUri.Segments.Length > 0
+        string folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
             ? Path.Combine(folderBase, bookUri.Segments[^1])
             : folderBase;
         Directory.CreateDirectory(folderPath);
@@ -179,15 +210,14 @@ class Program
         {
             string fullUrl = chapter.url.StartsWith("http") ? chapter.url : BaseUrl + chapter.url;
             string fileName = chapter.name.Replace("/", SlashReplaceString) + ".mp3";
-            await DownloadFile(fullUrl, Path.Combine(folderPath, fileName));
+            await DownloadFile(fullUrl, folderPath, fileName);
         }
-
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("Download finished");
-        Console.ResetColor();
+        AnsiConsole.MarkupLine("[green]Download finished to path[/]");
+        AnsiConsole.MarkupLine($"[green]{folderPath}[/]");
+        AnsiConsole.Ask<string>("Press Enter to continue");
     }
 
-    static async Task DownloadFile(string url, string filename)
+    static async Task DownloadFile(string url, string folderPath, string fileName)
     {
         var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
@@ -198,35 +228,35 @@ class Program
                 response = await httpClient.GetAsync(fallbackUrl, HttpCompletionOption.ResponseHeadersRead);
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"Failed to download {url} and fallback {fallbackUrl}");
+                    AnsiConsole.MarkupLine($"[red]Failed to download {url} and fallback {fallbackUrl}[/]");
                     return;
                 }
             }
             else
             {
-                Console.WriteLine($"Failed to download {url}");
+                AnsiConsole.MarkupLine($"[red]Failed to download {url}[/]");
                 return;
             }
         }
 
-        long? totalBytes = response.Content.Headers.ContentLength;
-        Console.WriteLine($"\rDownloading: {filename}");
-        using (var responseStream = await response.Content.ReadAsStreamAsync())
-        using (var fs = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            byte[] buffer = new byte[8192];
-            long totalRead = 0;
-            int read;
-            while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+        var path = Path.Combine(folderPath, fileName);
+        long? totalBytes = response.Content.Headers.ContentLength ?? 100;
+        await AnsiConsole.Progress()
+            .StartAsync(async ctx =>
             {
-                await fs.WriteAsync(buffer, 0, read);
-                totalRead += read;
-                if (totalBytes.HasValue)
+                var task = ctx.AddTask($"[green]Downloading:[/] {fileName}", maxValue: totalBytes.Value);
+                using (var responseStream = await response.Content.ReadAsStreamAsync())
+                using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    int percent = (int)((totalRead * 100) / totalBytes.Value);
-                    Console.Write($"\rProgress: {percent}%");
+                    byte[] buffer = new byte[8192];
+                    int read;
+
+                    while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fs.WriteAsync(buffer, 0, read);
+                        task.Increment(read);
+                    }
                 }
-            }
-        }
+            });
     }
 }
