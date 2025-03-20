@@ -29,12 +29,12 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 1. **Search book**: Search and find audiobook from Tokybook.com
 2. **Download from URL**: Directly download an audiobook using its URL.
 
-## Search Functionality
+### Search Functionality
 - Enter your search query when prompted.
 - Select the desired book from the search results.
 - The program will automatically start downloading all audiobook chapters.
 
-## Direct URL Download
+### Direct URL Download
 - Enter the URL of the audiobook when prompted.
 - The program will automatically start downloading the audiobook chapters.
 
