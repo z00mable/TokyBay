@@ -64,11 +64,6 @@ dotnet build
 ```sh
 dotnet run -d "C:\Users\User\Music"
 ```
-or
-
-```sh
-dotnet run --direcotry "C:\Users\User\Music"
-```
 
 ## Credits
 
