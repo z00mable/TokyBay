@@ -1,19 +1,29 @@
-﻿using TokyBay;
+﻿using Microsoft.Extensions.Configuration;
+using TokyBay;
 
 class Program
 {
     static async Task Main(string[] args)
     {
-        string? customDownloadFolder = null;
+        IConfiguration config = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
+
+        await SettingsMenu.SetSettings(config);
+
         for (int i = 0; i < args.Length; i++)
         {
             if ((args[i] == "-d" || args[i] == "--directory") && i + 1 < args.Length)
             {
-                customDownloadFolder = args[i + 1];
+                if (args[i + 1] != SettingsMenu.UserSettings.DownloadPath)
+                {
+                    SettingsMenu.UserSettings.DownloadPath = args[i + 1];
+                    await SettingsMenu.PersistSettings();
+                }
             }
         }
 
-        Settings.DownloadPath = customDownloadFolder ?? Directory.GetCurrentDirectory();
         await MenuHandler.ShowMainMenu();
     }
 }

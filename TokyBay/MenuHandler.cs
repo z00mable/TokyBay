@@ -6,7 +6,7 @@ namespace TokyBay
     {
         public static async Task ShowMainMenu()
         {
-            string[] options = { "Search book", "Download from URL", "Exit" };
+            string[] options = { "Search book", "Download from URL", "Settings", "Exit" };
             while (true)
             {
                 var selection = DisplayMenu("Choose action:", options);
@@ -17,6 +17,9 @@ namespace TokyBay
                         break;
                     case "Download from URL":
                         await Downloader.GetInput();
+                        break;
+                    case "Settings":
+                        await SettingsMenu.GetSettings();
                         break;
                     case "Exit":
                         return;

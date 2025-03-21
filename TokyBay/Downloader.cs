@@ -17,7 +17,7 @@ namespace TokyBay
             AnsiConsole.Clear();
             AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {Settings.DownloadPath}");
+            AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsMenu.UserSettings.DownloadPath}");
             while (true)
             {
                 AnsiConsole.WriteLine();
@@ -88,8 +88,8 @@ namespace TokyBay
 
             Uri bookUri = new Uri(bookUrl);
             string folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
-                ? Path.Combine(Settings.DownloadPath, bookUri.Segments[^1])
-                : Settings.DownloadPath;
+                ? Path.Combine(SettingsMenu.UserSettings.DownloadPath, bookUri.Segments[^1])
+                : SettingsMenu.UserSettings.DownloadPath;
             Directory.CreateDirectory(folderPath);
 
             foreach (var chapter in chapters)
