@@ -21,7 +21,7 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
     tokybay
     ```
     
-- If TokyBay is invokes with `-d` or `--directory` as arguments it will change to custom directory
+- If TokyBay is invoked with `-d` or `--directory` as arguments it will change to custom directory
 
     ```shell
     tokybay -d "C:\Users\User\Music"
