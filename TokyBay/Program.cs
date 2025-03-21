@@ -41,7 +41,6 @@ class Program
                 case "Exit":
                     return;
             }
-
         }
     }
 
@@ -53,6 +52,8 @@ class Program
         var selection = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title($"[grey]{prompt}[/]")
+                .PageSize(20)
+                .MoreChoicesText("[grey](Move up and down to reveal more titles)[/]")
                 .AddChoices(options)
         );
         return selection;
@@ -65,73 +66,78 @@ class Program
         AnsiConsole.WriteLine();
         string query = AnsiConsole.Ask<string>("Enter search query:");
         searchCache.Clear();
-        await SearchBook(query, 1);
+        await SearchBook(query);
     }
 
-    static async Task SearchBook(string query, int page)
+    static async Task SearchBook(string query)
     {
-        List<string> displayTitles;
-        List<string> urls;
+        int page = 1;
+        List<string> allTitles = new List<string>();
+        List<string> allUrls = new List<string>();
 
-        if (searchCache.ContainsKey(page))
+        while (true)
         {
-            (displayTitles, urls) = searchCache[page];
-        }
-        else
-        {
+            bool noMoreTitles = false;
             string url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
             string html = string.Empty;
-
-            await AnsiConsole.Status()
-                .StartAsync("Searching...", async ctx =>
-                {
-                    html = await httpClient.GetStringAsync(url);
-                });
-
-            var htmlDoc = new HtmlDocument();
-            htmlDoc.LoadHtml(html);
-
-            var titleNodes = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
-            displayTitles = new List<string>();
-            urls = new List<string>();
-
-            if (titleNodes != null)
+            HttpResponseMessage response = null;
+            await AnsiConsole.Status().StartAsync("Searching...", async ctx =>
             {
-                foreach (var node in titleNodes)
+                response = await httpClient.GetAsync(url);
+            });
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                noMoreTitles = true;
+            }
+            else
+            {
+                response.EnsureSuccessStatusCode();
+                html = await response.Content.ReadAsStringAsync();
+                HtmlDocument htmlDoc = new HtmlDocument();
+                htmlDoc.LoadHtml(html);
+                var titleNodes = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
+                if (titleNodes != null)
                 {
-                    displayTitles.Add(WebUtility.HtmlDecode(node.InnerText));
-                    urls.Add(node.GetAttributeValue("href", ""));
+                    foreach (var node in titleNodes)
+                    {
+                        allTitles.Add(WebUtility.HtmlDecode(node.InnerText));
+                        allUrls.Add(node.GetAttributeValue("href", ""));
+                    }
+                }
+                else
+                {
+                    noMoreTitles = true;
                 }
             }
 
-            var nextPageNode = htmlDoc.DocumentNode.SelectSingleNode("//a[contains(@class, 'next page-numbers')]");
-            if (nextPageNode != null)
+            List<string> menuOptions = new List<string>(allTitles);
+            if (!noMoreTitles)
             {
-                displayTitles.Add("[green]Next page[/]");
-                urls.Add("next");
+                menuOptions.Add("[green]Load more[/]");
             }
-            if (page > 1)
+
+            menuOptions.Add("[red]Exit[/]");
+
+            var selection = DisplayMenu("Select a book:", menuOptions.ToArray());
+
+            if (selection == "[red]Exit[/]")
             {
-                displayTitles.Add("[green]Previous page[/]");
-                urls.Add("previous");
+                return;
             }
-            displayTitles.Add("[red]Exit[/]");
-            urls.Add("exit");
-
-            searchCache[page] = (displayTitles, urls);
-        }
-
-        var selection = DisplayMenu("Select a book:", displayTitles.ToArray());
-        if (selection == "[red]Exit[/]")
-            return;
-        else if (selection == "[green]Next page[/]")
-            await SearchBook(query, page + 1);
-        else if (selection == "[green]Previous page[/]")
-            await SearchBook(query, page - 1);
-        else
-        {
-            int selectedIndex = displayTitles.IndexOf(selection);
-            await GetChapters(urls[selectedIndex]);
+            else if (selection == "[green]Load more[/]")
+            {
+                page++;
+                continue;
+            }
+            else
+            {
+                int selectedIndex = allTitles.IndexOf(selection);
+                if (selectedIndex >= 0)
+                {
+                    await GetChapters(allUrls[selectedIndex]);
+                    return;
+                }
+            }
         }
     }
 
@@ -147,6 +153,7 @@ class Program
             AnsiConsole.Console.Input.ReadKey(false);
             return;
         }
+
         await GetChapters(url);
     }
 
@@ -196,7 +203,9 @@ class Program
             string chapterName = item["name"]?.ToString() ?? "Unknown";
             string chapterUrl = item["chapter_link_dropbox"]?.ToString() ?? "";
             if (chapterUrl != SkipChapter)
+            {
                 chapters.Add((chapterName, chapterUrl));
+            }
         }
 
         string folderBase = customDownloadFolder ?? Directory.GetCurrentDirectory();
@@ -204,6 +213,7 @@ class Program
         string folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
             ? Path.Combine(folderBase, bookUri.Segments[^1])
             : folderBase;
+
         Directory.CreateDirectory(folderPath);
 
         foreach (var chapter in chapters)
@@ -212,6 +222,7 @@ class Program
             string fileName = chapter.name.Replace("/", SlashReplaceString) + ".mp3";
             await DownloadFile(fullUrl, folderPath, fileName);
         }
+
         AnsiConsole.MarkupLine("[green]Download finished to path[/]");
         AnsiConsole.MarkupLine($"[green]{folderPath}[/]");
         AnsiConsole.Ask<string>("Press Enter to continue");
