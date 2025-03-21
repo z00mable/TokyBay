@@ -13,9 +13,6 @@ class Program
     private const string SlashReplaceString = " out of ";
     private static string customDownloadFolder = null;
 
-    private static Dictionary<int, (List<string> displayTitles, List<string> urls)> searchCache 
-        = new Dictionary<int, (List<string>, List<string>)>();
-
     static async Task Main(string[] args)
     {
         for (int i = 0; i < args.Length; i++)
@@ -56,6 +53,7 @@ class Program
                 .MoreChoicesText("[grey](Move up and down to reveal more titles)[/]")
                 .AddChoices(options)
         );
+
         return selection;
     }
 
@@ -65,7 +63,7 @@ class Program
         AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
         AnsiConsole.WriteLine();
         string query = AnsiConsole.Ask<string>("Enter search query:");
-        searchCache.Clear();
+
         await SearchBook(query);
     }
 
@@ -81,10 +79,14 @@ class Program
             string url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
             string html = string.Empty;
             HttpResponseMessage response = null;
-            await AnsiConsole.Status().StartAsync("Searching...", async ctx =>
-            {
-                response = await httpClient.GetAsync(url);
-            });
+
+            await AnsiConsole.Status()
+                .SpinnerStyle(Style.Parse("blue bold"))
+                .StartAsync("Searching...", async ctx =>
+                {
+                    response = await httpClient.GetAsync(url);
+                });
+
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 noMoreTitles = true;
@@ -145,22 +147,26 @@ class Program
     {
         AnsiConsole.Clear();
         AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
-        AnsiConsole.WriteLine();
-        string url = AnsiConsole.Ask<string>("Enter URL:");
-        if (!url.StartsWith("https://tokybook.com/"))
+        while (true)
         {
-            AnsiConsole.MarkupLine("[red]Invalid URL![/]");
-            AnsiConsole.Console.Input.ReadKey(false);
-            return;
-        }
+            AnsiConsole.WriteLine();
+            string url = AnsiConsole.Ask<string>("Enter URL:");
+            if (!url.StartsWith("https://tokybook.com/"))
+            {
+                AnsiConsole.MarkupLine("[red]Invalid URL![/]");
+                continue;
+            }
 
-        await GetChapters(url);
+            await GetChapters(url);
+            break;
+        }
     }
 
     static async Task GetChapters(string bookUrl)
     {
         string html = string.Empty;
         await AnsiConsole.Status()
+                .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
                     html = await httpClient.GetStringAsync(bookUrl);
@@ -173,7 +179,8 @@ class Program
         if (scripts == null)
         {
             AnsiConsole.MarkupLine("[red]No tracks found.[/]");
-            AnsiConsole.Ask<string>("Press Enter to continue");
+            AnsiConsole.MarkupLine("Press any key to continue");
+            AnsiConsole.Console.Input.ReadKey(true);
             return;
         }
 
@@ -191,7 +198,8 @@ class Program
         if (string.IsNullOrEmpty(jsonString))
         {
             AnsiConsole.MarkupLine("[red]No valid track information found.[/]");
-            AnsiConsole.Ask<string>("Press Enter to continue");
+            AnsiConsole.MarkupLine("Press any key to continue");
+            AnsiConsole.Console.Input.ReadKey(true);
             return;
         }
 
@@ -225,7 +233,8 @@ class Program
 
         AnsiConsole.MarkupLine("[green]Download finished to path[/]");
         AnsiConsole.MarkupLine($"[green]{folderPath}[/]");
-        AnsiConsole.Ask<string>("Press Enter to continue");
+        AnsiConsole.MarkupLine("Press any key to continue");
+        AnsiConsole.Console.Input.ReadKey(true);
     }
 
     static async Task DownloadFile(string url, string folderPath, string fileName)
