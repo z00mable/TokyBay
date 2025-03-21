@@ -2,6 +2,6 @@
 {
     public class UserSettings
     {
-        public string DownloadPath { get; set; }
+        public string DownloadPath { get; set; } = string.Empty;
     }
 }

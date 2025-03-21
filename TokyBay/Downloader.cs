@@ -21,8 +21,8 @@ namespace TokyBay
             while (true)
             {
                 AnsiConsole.WriteLine();
-                string url = AnsiConsole.Ask<string>("Enter URL:");
-                if (!url.StartsWith("https://tokybook.com/"))
+                var url = AnsiConsole.Ask<string>("Enter URL:");
+                if (url == null || !url.StartsWith("https://tokybook.com/"))
                 {
                     AnsiConsole.MarkupLine("[red]Invalid URL! Try again.[/]");
                     continue;
@@ -35,38 +35,15 @@ namespace TokyBay
 
         public static async Task GetChapters(string bookUrl)
         {
-            string html = string.Empty;
+            var tracks = string.Empty;
             await AnsiConsole.Status()
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
-                    html = (await HttpHelper.GetHtmlAsync(bookUrl));
+                    tracks = await GetTracksFromHtml(bookUrl);
                 });
 
-            HtmlDocument htmlDoc = new HtmlDocument();
-            htmlDoc.LoadHtml(html);
-
-            var scripts = htmlDoc.DocumentNode.SelectNodes("//script");
-            if (scripts == null)
-            {
-                AnsiConsole.MarkupLine("[red]No tracks found.[/]");
-                AnsiConsole.MarkupLine("Press any key to continue");
-                Console.ReadKey(true);
-                return;
-            }
-
-            string jsonString = "";
-            foreach (var script in scripts)
-            {
-                Match match = Regex.Match(script.InnerText, "tracks\\s*=\\s*(\\[.*?\\])", RegexOptions.Singleline);
-                if (match.Success)
-                {
-                    jsonString = match.Groups[1].Value;
-                    break;
-                }
-            }
-
-            if (string.IsNullOrEmpty(jsonString))
+            if (string.IsNullOrEmpty(tracks))
             {
                 AnsiConsole.MarkupLine("[red]No valid track information found.[/]");
                 AnsiConsole.MarkupLine("Press any key to continue");
@@ -74,28 +51,24 @@ namespace TokyBay
                 return;
             }
 
-            JArray json = JArray.Parse(jsonString);
-            List<(string name, string url)> chapters = new List<(string, string)>();
-            foreach (var item in json)
-            {
-                string chapterName = item["name"]?.ToString() ?? "Unknown";
-                string chapterUrl = item["chapter_link_dropbox"]?.ToString() ?? "";
-                if (chapterUrl != SkipChapter)
-                {
-                    chapters.Add((chapterName, chapterUrl));
-                }
-            }
-
-            Uri bookUri = new Uri(bookUrl);
-            string folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
+            var bookUri = new Uri(bookUrl);
+            var folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
                 ? Path.Combine(SettingsMenu.UserSettings.DownloadPath, bookUri.Segments[^1])
                 : SettingsMenu.UserSettings.DownloadPath;
             Directory.CreateDirectory(folderPath);
 
+            var chapters = JArray.Parse(tracks);
             foreach (var chapter in chapters)
             {
-                string fullUrl = chapter.url.StartsWith("http") ? chapter.url : BaseUrl + chapter.url;
-                string fileName = chapter.name.Replace("/", SlashReplaceString) + ".mp3";
+                var chapterUrl = chapter["chapter_link_dropbox"]?.ToString() ?? "";
+                if (chapterUrl == SkipChapter)
+                {
+                    continue;
+                }
+
+                var chapterName = chapter["name"]?.ToString() ?? "Unknown";
+                var fullUrl = chapterUrl.StartsWith("http") ? chapterUrl : BaseUrl + chapterUrl;
+                var fileName = chapterName.Replace("/", SlashReplaceString) + ".mp3";
                 await DownloadFile(fullUrl, folderPath, fileName);
             }
 
@@ -107,12 +80,12 @@ namespace TokyBay
 
         public static async Task DownloadFile(string url, string folderPath, string fileName)
         {
-            HttpResponseMessage response = await HttpHelper.GetHttpResponseAsync(url);
+            var response = await HttpHelper.GetHttpResponseAsync(url);
             if (!response.IsSuccessStatusCode)
             {
                 if (url.StartsWith(BaseUrl))
                 {
-                    string fallbackUrl = MediaFallbackUrl + url.Substring(BaseUrl.Length);
+                    var fallbackUrl = MediaFallbackUrl + url.Substring(BaseUrl.Length);
                     response = await HttpHelper.GetHttpResponseAsync(fallbackUrl);
                     if (!response.IsSuccessStatusCode)
                     {
@@ -127,15 +100,15 @@ namespace TokyBay
                 }
             }
 
-            string path = Path.Combine(folderPath, fileName);
-            long? totalBytes = response.Content.Headers.ContentLength ?? 100;
+            var path = Path.Combine(folderPath, fileName);
+            var totalBytes = response.Content.Headers.ContentLength ?? 100;
             await AnsiConsole.Progress().StartAsync(async ctx =>
             {
-                var task = ctx.AddTask($"[green]Downloading:[/] {fileName}", maxValue: totalBytes.Value);
+                var task = ctx.AddTask($"[green]Downloading:[/] {fileName}", maxValue: totalBytes);
                 using (var responseStream = await response.Content.ReadAsStreamAsync())
                 using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    byte[] buffer = new byte[8192];
+                    var buffer = new byte[8192];
                     int read;
                     while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                     {
@@ -144,6 +117,31 @@ namespace TokyBay
                     }
                 }
             });
+        }
+
+        private static async Task<string> GetTracksFromHtml(string bookUrl)
+        {
+            var html = await HttpHelper.GetHtmlAsync(bookUrl);
+            var htmlDoc = new HtmlDocument();
+            htmlDoc.LoadHtml(html);
+            var scripts = htmlDoc.DocumentNode.SelectNodes("//script");
+            if (scripts == null)
+            {
+                return string.Empty;
+            }
+
+            var tracks = string.Empty;
+            foreach (var script in scripts)
+            {
+                var match = Regex.Match(script.InnerText, "tracks\\s*=\\s*(\\[.*?\\])", RegexOptions.Singleline);
+                if (match.Success)
+                {
+                    tracks = match.Groups[1].Value;
+                    break;
+                }
+            }
+
+            return tracks;
         }
     }
 }

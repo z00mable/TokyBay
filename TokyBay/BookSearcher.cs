@@ -11,20 +11,20 @@ namespace TokyBay
             AnsiConsole.Clear();
             AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
             AnsiConsole.WriteLine();
-            string query = AnsiConsole.Ask<string>("Enter search query:");
+            var query = AnsiConsole.Ask<string>("Enter search query:");
             await SearchBook(query);
         }
 
         public static async Task SearchBook(string query)
         {
-            int page = 1;
-            List<string> allTitles = new List<string>();
-            List<string> allUrls = new List<string>();
+            var page = 1;
+            var allTitles = new List<string>();
+            var allUrls = new List<string>();
 
             while (true)
             {
-                string url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
-                string html = string.Empty;
+                var url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
+                var html = string.Empty;
                 await AnsiConsole.Status()
                     .SpinnerStyle(Style.Parse("blue bold"))
                     .StartAsync("Searching...", async ctx =>
@@ -32,10 +32,10 @@ namespace TokyBay
                         html = await HttpHelper.GetHtmlAsync(url);
                     });
 
-                HtmlDocument htmlDoc = new HtmlDocument();
+                var htmlDoc = new HtmlDocument();
                 htmlDoc.LoadHtml(html);
                 var titleNodes = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
-                bool hasNextPage = htmlDoc.DocumentNode.SelectSingleNode("//a[contains(@class, 'next page-numbers')]") != null;
+                var hasNextPage = htmlDoc.DocumentNode.SelectSingleNode("//a[contains(@class, 'next page-numbers')]") != null;
 
                 if (titleNodes != null)
                 {
@@ -46,7 +46,7 @@ namespace TokyBay
                     }
                 }
 
-                List<string> menuOptions = new List<string>(allTitles);
+                var menuOptions = new List<string>(allTitles);
                 if (hasNextPage)
                 {
                     menuOptions.Add("[green]Load more[/]");
@@ -66,7 +66,7 @@ namespace TokyBay
                 }
                 else
                 {
-                    int selectedIndex = allTitles.IndexOf(selection);
+                    var selectedIndex = allTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
                         await Downloader.GetChapters(allUrls[selectedIndex]);

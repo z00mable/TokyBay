@@ -8,7 +8,7 @@ namespace TokyBay
 
         public static async Task<string> GetHtmlAsync(string url)
         {
-            HttpResponseMessage response = await GetHttpResponseAsync(url);
+            var response = await GetHttpResponseAsync(url);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 return string.Empty;

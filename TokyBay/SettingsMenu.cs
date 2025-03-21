@@ -31,18 +31,13 @@ namespace TokyBay
                 UserSettings = UserSettings
             };
 
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true
-            };
-
-            string json = JsonSerializer.Serialize(jsonObject, options);
-            await File.WriteAllTextAsync("appsettings.json", json);
+            var userSettings = JsonSerializer.Serialize(jsonObject, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync("appsettings.json", userSettings);
         }
 
         public static async Task GetSettings()
         {
-            bool exit = false;
+            var exit = false;
             while (!exit)
             {
                 AnsiConsole.Clear();
@@ -60,7 +55,7 @@ namespace TokyBay
                 switch (choice)
                 {
                     case "Change download directory":
-                        string newPath = AnsiConsole.Ask<string>("Enter new download directory:");
+                        var newPath = AnsiConsole.Ask<string>("Enter new download directory:");
                         if (!string.IsNullOrWhiteSpace(newPath))
                         {
                             UserSettings.DownloadPath = newPath;
