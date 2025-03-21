@@ -4,7 +4,7 @@ namespace TokyBay
 {
     public static class MenuHandler
     {
-        public static async Task ShowMainMenu(string? customDownloadFolder)
+        public static async Task ShowMainMenu()
         {
             string[] options = { "Search book", "Download from URL", "Exit" };
             while (true)
@@ -16,7 +16,7 @@ namespace TokyBay
                         await BookSearcher.PromptSearchBook();
                         break;
                     case "Download from URL":
-                        await Downloader.GetInput(customDownloadFolder);
+                        await Downloader.GetInput();
                         break;
                     case "Exit":
                         return;

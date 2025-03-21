@@ -69,7 +69,7 @@ namespace TokyBay
                     int selectedIndex = allTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
-                        await Downloader.GetChapters(allUrls[selectedIndex], customDownloadFolder: null);
+                        await Downloader.GetChapters(allUrls[selectedIndex]);
                         return;
                     }
                 }

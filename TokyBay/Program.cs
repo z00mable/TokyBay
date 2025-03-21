@@ -13,6 +13,7 @@ class Program
             }
         }
 
-        await MenuHandler.ShowMainMenu(customDownloadFolder);
+        Settings.DownloadPath = customDownloadFolder ?? Directory.GetCurrentDirectory();
+        await MenuHandler.ShowMainMenu();
     }
 }

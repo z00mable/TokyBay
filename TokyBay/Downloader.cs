@@ -12,10 +12,12 @@ namespace TokyBay
         private const string SkipChapter = "https://file.tokybook.com/upload/welcome-you-to-tokybook.mp3";
         private const string SlashReplaceString = " out of ";
 
-        public static async Task GetInput(string? customDownloadFolder)
+        public static async Task GetInput()
         {
             AnsiConsole.Clear();
             AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {Settings.DownloadPath}");
             while (true)
             {
                 AnsiConsole.WriteLine();
@@ -26,12 +28,12 @@ namespace TokyBay
                     continue;
                 }
 
-                await GetChapters(url, customDownloadFolder);
+                await GetChapters(url);
                 break;
             }
         }
 
-        public static async Task GetChapters(string bookUrl, string? customDownloadFolder)
+        public static async Task GetChapters(string bookUrl)
         {
             string html = string.Empty;
             await AnsiConsole.Status()
@@ -84,11 +86,10 @@ namespace TokyBay
                 }
             }
 
-            string folderBase = customDownloadFolder ?? Directory.GetCurrentDirectory();
             Uri bookUri = new Uri(bookUrl);
             string folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
-                ? Path.Combine(folderBase, bookUri.Segments[^1])
-                : folderBase;
+                ? Path.Combine(Settings.DownloadPath, bookUri.Segments[^1])
+                : Settings.DownloadPath;
             Directory.CreateDirectory(folderPath);
 
             foreach (var chapter in chapters)
