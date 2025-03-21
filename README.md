@@ -15,20 +15,22 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 
 ## Usage
 
-- Invoke `-d` or `--directory` to add a custom directory
+- With the first start TokyBay will automatically store the current directory
+  
+    ```shell
+    tokybay
+    ```
+    
+- If TokyBay is invokes with `-d` or `--directory` as arguments it will change to custom directory
 
     ```shell
     tokybay -d "C:\Users\User\Music"
     ```
 
-> [!NOTE]
->
-> - If `-d` or `--directory` is not invoked, TokyBay will download the books in current directory.
->
-
 ### Features
 1. **Search book**: Search and find audiobook from Tokybook.com
 2. **Download from URL**: Directly download an audiobook using its URL.
+3. **User settings**: Conveniently stored and easily changed in Settings.
 
 ### Search Functionality
 - Enter your search query when prompted.
