@@ -2,6 +2,7 @@
 using Newtonsoft.Json.Linq;
 using Spectre.Console;
 using System.Text.RegularExpressions;
+using Xabe.FFmpeg;
 
 namespace TokyBay
 {
@@ -15,8 +16,7 @@ namespace TokyBay
         public static async Task GetInput()
         {
             AnsiConsole.Clear();
-            AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
-            AnsiConsole.WriteLine();
+            Constants.ShowHeader();
             AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsMenu.UserSettings.DownloadPath}");
             while (true)
             {
@@ -58,8 +58,16 @@ namespace TokyBay
             Directory.CreateDirectory(folderPath);
 
             var chapters = JArray.Parse(tracks);
+            var fileNames = new List<string>();
+            int index = 0;
             foreach (var chapter in chapters)
             {
+                if (index > 2)
+                {
+                    break;
+                }
+                index++;
+
                 var chapterUrl = chapter["chapter_link_dropbox"]?.ToString() ?? "";
                 if (chapterUrl == SkipChapter)
                 {
@@ -69,11 +77,23 @@ namespace TokyBay
                 var chapterName = chapter["name"]?.ToString() ?? "Unknown";
                 var fullUrl = chapterUrl.StartsWith("http") ? chapterUrl : BaseUrl + chapterUrl;
                 var fileName = chapterName.Replace("/", SlashReplaceString) + ".mp3";
+                fileNames.Add(fileName);
                 await DownloadFile(fullUrl, folderPath, fileName);
             }
+            
+            if (SettingsMenu.UserSettings.ConvertMp3ToM4b)
+            {
+                foreach(var fileName in fileNames)
+                {
+                    await ConvertMp3FileToM4b(folderPath, fileName);
+                    if (SettingsMenu.UserSettings.DeleteMp3AfterDownload)
+                    {
+                        await DeleteMp3File(folderPath, fileName);
+                    }
+                }
+            }
 
-            AnsiConsole.MarkupLine("[green]Download finished to path[/]");
-            AnsiConsole.MarkupLine($"[green]{folderPath}[/]");
+            AnsiConsole.MarkupLine("[green]Download finished[/]");
             AnsiConsole.MarkupLine("Press any key to continue");
             Console.ReadKey(true);
         }
@@ -142,6 +162,39 @@ namespace TokyBay
             }
 
             return tracks;
+        }
+
+        private static async Task ConvertMp3FileToM4b(string folderPath, string fileName)
+        {
+            var inputFile = Path.Combine(folderPath, fileName);
+            var outputFile = inputFile.Replace(".mp3", ".m4b");
+
+            FFmpeg.SetExecutablesPath(SettingsMenu.UserSettings.FFmpegDirectory);
+            IConversion conversion = FFmpeg.Conversions.New();
+            conversion.AddParameter($"-i \"{inputFile}\"");
+            conversion.AddParameter("-c:a aac -b:a 64k");
+            conversion.SetOutput(outputFile);
+
+            await AnsiConsole.Progress().StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask($"[green]Converting to m4b:[/] {fileName}", maxValue: 100);
+                conversion.OnProgress += (sender, progress) =>
+                {
+                    task.Value = progress.Percent;
+                };
+
+                await conversion.Start();
+            });
+        }
+
+        private static async Task DeleteMp3File(string folderPath, string fileName)
+        {
+            var filePath = Path.Combine(folderPath, fileName);
+            if (File.Exists(filePath))
+            {
+                await Task.Run(() => File.Delete(filePath));
+                AnsiConsole.MarkupLine($"[green]File deleted:[/] {fileName}");
+            }
         }
     }
 }

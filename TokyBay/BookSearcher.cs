@@ -9,8 +9,7 @@ namespace TokyBay
         public static async Task PromptSearchBook()
         {
             AnsiConsole.Clear();
-            AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
-            AnsiConsole.WriteLine();
+            Constants.ShowHeader();
             var query = AnsiConsole.Ask<string>("Enter search query:");
             await SearchBook(query);
         }

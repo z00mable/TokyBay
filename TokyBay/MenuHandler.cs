@@ -30,8 +30,7 @@ namespace TokyBay
         public static string DisplayMenu(string prompt, string[] options)
         {
             AnsiConsole.Clear();
-            AnsiConsole.MarkupLine("[blue italic]Welcome to TokyBay[/]");
-            AnsiConsole.WriteLine();
+            Constants.ShowHeader();
             return AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
                     .Title($"[grey]{prompt}[/]")
