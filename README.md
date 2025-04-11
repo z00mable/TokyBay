@@ -29,7 +29,7 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 
 > [!Tip]
 >
-> - If `-d` or `--directory` is not invoked, TokyBay will download the books to current directory. But directory can be change inside TokyBay settings.
+> - If `-d` or `--directory` is not invoked, TokyBay will download the books to current directory. But directory can be change inside TokyBay's in-app settings.
 >
 
 ### Features

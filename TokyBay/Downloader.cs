@@ -59,15 +59,8 @@ namespace TokyBay
 
             var chapters = JArray.Parse(tracks);
             var fileNames = new List<string>();
-            int index = 0;
             foreach (var chapter in chapters)
             {
-                if (index > 2)
-                {
-                    break;
-                }
-                index++;
-
                 var chapterUrl = chapter["chapter_link_dropbox"]?.ToString() ?? "";
                 if (chapterUrl == SkipChapter)
                 {
