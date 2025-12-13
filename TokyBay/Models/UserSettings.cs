@@ -3,8 +3,8 @@
     public class UserSettings
     {
         public string DownloadPath { get; set; } = string.Empty;
-        public bool ConvertMp3ToM4b { get; set; } = false;
-        public bool DeleteMp3AfterDownload { get; set; } = false;
         public string FFmpegDirectory { get; set; } = string.Empty;
+        public bool ConvertToMp3 { get; set; } = false;
+        public bool ConvertToM4b { get; set; } = false;
     }
 }

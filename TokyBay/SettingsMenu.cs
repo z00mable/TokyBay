@@ -15,17 +15,6 @@ namespace TokyBay
         {
             config.GetSection("UserSettings").Bind(UserSettings);
 
-            if (!string.IsNullOrEmpty(UserSettings.FFmpegDirectory))
-            {
-                if (!ExistsFFmpegFile(UserSettings.FFmpegDirectory))
-                {
-                    UserSettings.FFmpegDirectory = string.Empty;
-                    UserSettings.ConvertMp3ToM4b = false;
-                    UserSettings.DeleteMp3AfterDownload = false;
-                    await PersistSettings();
-                }
-            }
-
             if (string.IsNullOrEmpty(UserSettings.DownloadPath))
             {
                 var windowsMusicFolder = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "\\Music" : string.Empty;
@@ -37,10 +26,29 @@ namespace TokyBay
             await Task.CompletedTask;
         }
 
+        public static async Task DownloadFFmpeg()
+        {
+            if (ExistsFFmpegFile(UserSettings.FFmpegDirectory))
+            {
+                return;
+            }
+
+            await AnsiConsole.Status()
+                .SpinnerStyle(Style.Parse("blue bold"))
+                .StartAsync("[green]Downloading FFmpeg files...[/]", async ctx =>
+                {
+                    await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official);
+                });
+
+            UserSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
+
+            AnsiConsole.MarkupLine($"[green]'FFmpeg successfully downloaded to:[/] {UserSettings.FFmpegDirectory}");
+            await Task.Delay(1000);
+        }
+
         public static async Task PersistSettings()
         {
-            var jsonObject = new { UserSettings = UserSettings };
-            var userSettings = JsonSerializer.Serialize(jsonObject, new JsonSerializerOptions { WriteIndented = true });
+            var userSettings = JsonSerializer.Serialize(new { UserSettings }, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync("appsettings.json", userSettings);
         }
 
@@ -58,9 +66,9 @@ namespace TokyBay
                         .AddChoices(new[]
                         {
                             "Change download directory",
-                            "Set FFmpeg directory",
-                            "Toggle 'Convert mp3 to m4b after download'",
-                            "Toggle 'Delete mp3 after download'",
+                            "Change FFmpeg directory",
+                            "Toggle 'Download files as mp3'",
+                            "Toggle 'Download files as m4b'",
                             "Exit"
                         })
                 );
@@ -70,14 +78,14 @@ namespace TokyBay
                     case "Change download directory":
                         await ChangeDownloadDirectory();
                         break;
-                    case "Set FFmpeg directory":
-                        await SetFfmpegDirectory();
+                    case "Change FFmpeg directory":
+                        await ChangeFfmpegDirectory();
                         break;
-                    case "Toggle 'Convert mp3 to m4b after download'":
-                        await ConvertMp3ToM4b();
+                    case "Toggle 'Download files as mp3'":
+                        await DownloadAsMp3();
                         break;
-                    case "Toggle 'Delete mp3 after download'":
-                        await DeleteMp3AfterDownload();
+                    case "Toggle 'Download files as m4b'":
+                        await DownloadAsM4b();
                         break;
                     case "Exit":
                         exit = true;
@@ -94,11 +102,11 @@ namespace TokyBay
             table.AddColumn(new TableColumn("[yellow]Value[/]"));
             table.AddRow("Download directory", $"[green]{UserSettings.DownloadPath}[/]");
             table.AddRow("FFmpeg directory", $"[green]{UserSettings.FFmpegDirectory}[/]");
-            table.AddRow("Convert mp3 to m4b after download", $"[green]{UserSettings.ConvertMp3ToM4b}[/]");
-            table.AddRow("Delete mp3 after download", $"[green]{UserSettings.DeleteMp3AfterDownload}[/]");
+            table.AddRow("Download files as mp3", $"[green]{UserSettings.ConvertToMp3}[/]");
+            table.AddRow("Download files as m4b", $"[green]{UserSettings.ConvertToM4b}[/]");
             var panel = new Panel(table)
             {
-                Header = new PanelHeader("[yellow]Current Settings[/]"),
+                Header = new PanelHeader("[yellow] Current Settings [/]"),
                 Border = BoxBorder.Double
             };
 
@@ -122,7 +130,7 @@ namespace TokyBay
             }
         }
 
-        private static async Task SetFfmpegDirectory()
+        private static async Task ChangeFfmpegDirectory()
         {
             var newFFmpegPath = AnsiConsole.Ask<string>("Enter FFmpeg directory path:");
             if (!string.IsNullOrWhiteSpace(newFFmpegPath) && ExistsFFmpegFile(newFFmpegPath))
@@ -139,44 +147,20 @@ namespace TokyBay
             }
         }
 
-        private static async Task ConvertMp3ToM4b()
+        private static async Task DownloadAsMp3()
         {
-            UserSettings.ConvertMp3ToM4b = !UserSettings.ConvertMp3ToM4b;
-            if (UserSettings.ConvertMp3ToM4b)
-            {
-                await AnsiConsole.Status()
-                    .SpinnerStyle(Style.Parse("blue bold"))
-                    .StartAsync("[green]Downloading FFmpeg files...[/]", async ctx =>
-                    {
-                        await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official);
-                    });
-
-                UserSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
-            }
-            else
-            {
-                UserSettings.DeleteMp3AfterDownload = false;
-            }
-
+            UserSettings.ConvertToMp3 = !UserSettings.ConvertToMp3;
             await PersistSettings();
-            AnsiConsole.MarkupLine("[green]'Convert mp3 to m4b after download' updated.[/]");
+            AnsiConsole.MarkupLine("[green]'Download files as mp3' updated.[/]");
             await Task.Delay(1000);
         }
 
-        private static async Task DeleteMp3AfterDownload()
+        private static async Task DownloadAsM4b()
         {
-            if (!UserSettings.ConvertMp3ToM4b)
-            {
-                AnsiConsole.MarkupLine("[red]You cannot change 'Delete mp3 after download' because conversion is disabled.[/]");
-                await Task.Delay(1500);
-            }
-            else
-            {
-                UserSettings.DeleteMp3AfterDownload = !UserSettings.DeleteMp3AfterDownload;
-                await PersistSettings();
-                AnsiConsole.MarkupLine("[green]'Delete mp3 after download' updated.[/]");
-                await Task.Delay(1000);
-            }
+            UserSettings.ConvertToM4b = !UserSettings.ConvertToM4b;
+            await PersistSettings();
+            AnsiConsole.MarkupLine("[green]'Download files as m4b' updated.[/]");
+            await Task.Delay(1000);
         }
 
         private static bool ExistsFFmpegFile(string path)

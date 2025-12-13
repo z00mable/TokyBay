@@ -1,6 +1,9 @@
 # TokyBay
 
-> Search & Download audiobooks from Tokybook and convert it automatically to audiobook friendly M4B format.
+Search & Download audiobooks from Tokybook and convert it automatically to audiobook friendly M4B format or good old MP3 format.
+
+> [!Note]
+> Tokybay is updated to work with [Tokybook.com](https://tokybook.com) latest changes to their audiobook API.
 
 ## Contents
 
@@ -29,14 +32,15 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 
 > [!Tip]
 >
-> - If `-d` or `--directory` is not invoked, TokyBay will download the books to current directory. But directory can be change inside TokyBay's in-app settings.
+> - If `-d` or `--directory` is not invoked, TokyBay will download audiobooks to current directory. But directory can be change inside TokyBay's in-app settings.
 >
 
 ### Features
 1. **Search book**: Search and find audiobook from Tokybook.com
 2. **Download from URL**: Directly download an audiobook using its URL.
-3. **Convert to superior M4B format**: Convert downloaded MP3 files automatically to M4B audio book format.
-4. **User settings**: Conveniently stored and easily changed in TokyBay's in-app settings.
+3. **Convert to superior M4B format**: Convert downloaded files automatically to M4B audio book format.
+4. **Convert to MP3 format**: Convert downloaded files automatically to MP3 format.
+5. **User settings**: Conveniently stored and easily changed in TokyBay's in-app settings.
 
 ### Search Functionality
 - Enter your search query when prompted.
@@ -50,11 +54,11 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 ### Settings
 - Change download path.
 - Activate/deactivate automatic M4B conversion after download.
-- Keep or delete downloaded MP3 files (only possible when M4B conversion is activated).
+- Activate/deactivate automatic MP3 conversion after download.
 
 > [!Note]
 >
-> - After activating M4b conversion, TokyBoy will automatically download [FFmpeg](https://github.com/FFmpeg/FFmpeg), if no FFmpeg directory is set in the in-app settings.
+> - On first start, TokyBoy will automatically download [FFmpeg](https://github.com/FFmpeg/FFmpeg) to current directory. Can be changed in in-app settings later.
 >
 
 ## Installation
@@ -88,7 +92,9 @@ Xabe.FFmpeg is licensed under [Attribution-NonCommercial-ShareAlike 3.0 Unported
 
 ## Credits
 
-Inspired by projects from
+To [Tokybook.com](https://tokybook.com) for their awesomness.
+
+Tokybay is inspired by projects from
 
 - Adrian Castro https://github.com/castdrian/audiosnatch
 - Rahatul Ghazi https://github.com/rahaaatul/TokySnatcher

@@ -1,11 +1,15 @@
-﻿using HtmlAgilityPack;
+﻿using Newtonsoft.Json.Linq;
 using Spectre.Console;
-using System.Net;
+using System.Text;
 
 namespace TokyBay
 {
     public static class BookSearcher
     {
+        private const string TokybookUrl = "https://tokybook.com";
+        private const string SearchApiPath = "/api/v1/search";
+        private const string PostDetailsApiPath = "/post/";
+
         public static async Task PromptSearchBook()
         {
             AnsiConsole.Clear();
@@ -16,37 +20,57 @@ namespace TokyBay
 
         public static async Task SearchBook(string query)
         {
-            var page = 1;
-            var allTitles = new List<string>();
-            var allUrls = new List<string>();
+            var offset = 0;
+            var limit = 12;
+            var hasMoreHits = false;
+            var allBookTitles = new List<string>();
+            var allDynamicSlugIds = new List<string>();
 
             while (true)
             {
-                var url = $"https://tokybook.com/page/{page}/?s={Uri.EscapeDataString(query)}";
+                var url = $"https://tokybook.com/search?q={Uri.EscapeDataString(query)}";
                 var html = string.Empty;
                 await AnsiConsole.Status()
                     .SpinnerStyle(Style.Parse("blue bold"))
                     .StartAsync("Searching...", async ctx =>
                     {
-                        html = await HttpHelper.GetHtmlAsync(url);
+                        var searchResultsResponse = await GetSearchResults(query, offset, limit);
+                        if (searchResultsResponse == null)
+                        {
+                            AnsiConsole.MarkupLine("[red]Searching failed.[/]");
+                            return;
+                        }
+
+                        var searchResults = searchResultsResponse["content"] as JArray;
+                        if (searchResults != null)
+                        {
+                            foreach (var item in searchResults)
+                            {
+                                var title = item["title"]?.ToString();
+                                var dynamicSlugId = item["dynamicSlugId"]?.ToString();
+
+                                if (!string.IsNullOrEmpty(title))
+                                {
+                                    allBookTitles.Add(title);
+                                }
+
+                                if (!string.IsNullOrEmpty(dynamicSlugId))
+                                {
+                                    allDynamicSlugIds.Add(dynamicSlugId);
+                                }
+                            }
+                        }
+
+                        var totalHitsString = searchResultsResponse["totalHits"]?.ToString() ?? string.Empty;
+                        int.TryParse(totalHitsString, out int totalHits);
+                        if (totalHits > offset + limit)
+                        {
+                            hasMoreHits = true;
+                        }
                     });
 
-                var htmlDoc = new HtmlDocument();
-                htmlDoc.LoadHtml(html);
-                var titleNodes = htmlDoc.DocumentNode.SelectNodes("//h2[@class='entry-title']/a");
-                var hasNextPage = htmlDoc.DocumentNode.SelectSingleNode("//a[contains(@class, 'next page-numbers')]") != null;
-
-                if (titleNodes != null)
-                {
-                    foreach (var node in titleNodes)
-                    {
-                        allTitles.Add(WebUtility.HtmlDecode(node.InnerText));
-                        allUrls.Add(node.GetAttributeValue("href", ""));
-                    }
-                }
-
-                var menuOptions = new List<string>(allTitles);
-                if (hasNextPage)
+                var menuOptions = new List<string>(allBookTitles);
+                if (hasMoreHits)
                 {
                     menuOptions.Add("[green]Load more[/]");
                 }
@@ -60,18 +84,51 @@ namespace TokyBay
                 }
                 else if (selection == "[green]Load more[/]")
                 {
-                    page++;
+                    hasMoreHits = false;
+                    offset += limit;
                     continue;
                 }
                 else
                 {
-                    var selectedIndex = allTitles.IndexOf(selection);
+                    var selectedIndex = allBookTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
-                        await Downloader.GetChapters(allUrls[selectedIndex]);
+                        await Downloader.GetChapters(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
                         return;
                     }
                 }
+            }
+        }
+
+        private static async Task<JObject?> GetSearchResults(string query, int offset, int limit)
+        {
+            try
+            {
+                var userIdentity = await TokybookApiHandler.GetUserIdentity();
+                var payload = new JObject
+                {
+                    ["limit"] = limit,
+                    ["offset"] = offset,
+                    ["query"] = query,
+                    ["userIdentity"] = userIdentity
+                };
+
+                var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                var response = await HttpUtil.PostAsync(TokybookUrl + SearchApiPath, content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    AnsiConsole.MarkupLine($"[red]Search request failed: {response.StatusCode}[/]");
+                    return null;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JObject.Parse(json);
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error getting search results: {ex.Message}[/]");
+                return null;
             }
         }
     }

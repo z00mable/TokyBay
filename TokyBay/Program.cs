@@ -24,6 +24,8 @@ class Program
             }
         }
 
+        await SettingsMenu.DownloadFFmpeg();
+
         await MenuHandler.ShowMainMenu();
     }
 }
