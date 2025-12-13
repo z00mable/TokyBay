@@ -1,6 +1,6 @@
-﻿using HtmlAgilityPack;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using Spectre.Console;
+using System.Text;
 using System.Text.RegularExpressions;
 using Xabe.FFmpeg;
 
@@ -8,10 +8,10 @@ namespace TokyBay
 {
     public static class Downloader
     {
-        private const string BaseUrl = "https://files01.tokybook.com/audio/";
-        private const string MediaFallbackUrl = "https://files02.tokybook.com/audio/";
-        private const string SkipChapter = "https://file.tokybook.com/upload/welcome-you-to-tokybook.mp3";
-        private const string SlashReplaceString = " out of ";
+        private const string TokybookUrl = "https://tokybook.com";
+        private const string PostDetailsApiPath = "/api/v1/search/post-details";
+        private const string PlaylistApiPath = "/api/v1/playlist";
+        private const string AudioBaseApiPath = "/api/v1/public/audio/";
 
         public static async Task GetInput()
         {
@@ -35,55 +35,87 @@ namespace TokyBay
 
         public static async Task GetChapters(string bookUrl)
         {
-            var tracks = string.Empty;
+            JArray? tracks = null;
+            string bookTitle = string.Empty;
+            string audioBookId = string.Empty;
+            string streamToken = string.Empty;
+
             await AnsiConsole.Status()
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
-                    tracks = await GetTracksFromHtml(bookUrl);
+                    ctx.Status("Getting user identity...");
+                    var userIdentity = await TokybookApiHandler.GetUserIdentity();
+
+                    ctx.Status("Extracting dynamic slug...");
+                    var dynamicSlugId = ExtractDynamicSlugId(bookUrl);
+                    if (string.IsNullOrEmpty(dynamicSlugId))
+                    {
+                        AnsiConsole.MarkupLine("[red]Could not extract slug from URL.[/]");
+                        return;
+                    }
+
+                    ctx.Status("Fetching post details...");
+                    var postDetails = await GetPostDetails(dynamicSlugId, userIdentity);
+                    if (postDetails == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]Failed to get post details.[/]");
+                        return;
+                    }
+
+                    audioBookId = postDetails["audioBookId"]?.ToString() ?? string.Empty;
+                    var postDetailToken = postDetails["postDetailToken"]?.ToString();
+                    bookTitle = postDetails["title"]?.ToString() ?? "Unknown";
+
+                    if (string.IsNullOrEmpty(audioBookId) || string.IsNullOrEmpty(postDetailToken))
+                    {
+                        AnsiConsole.MarkupLine("[red]Missing audioBookId or postDetailToken.[/]");
+                        return;
+                    }
+
+                    ctx.Status("Fetching playlist...");
+                    var playlistResponse = await GetPlaylist(audioBookId, postDetailToken, dynamicSlugId, userIdentity);
+                    if (playlistResponse == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]Failed to get playlist.[/]");
+                        return;
+                    }
+
+                    tracks = playlistResponse["tracks"] as JArray;
+                    streamToken = playlistResponse["streamToken"]?.ToString() ?? string.Empty;
+
+                    if (string.IsNullOrEmpty(streamToken))
+                    {
+                        AnsiConsole.MarkupLine("[red]Missing streamToken.[/]");
+                        return;
+                    }
                 });
 
-            if (string.IsNullOrEmpty(tracks))
+            if (tracks == null || tracks.Count == 0)
             {
-                AnsiConsole.MarkupLine("[red]No valid track information found.[/]");
+                AnsiConsole.MarkupLine("[red]No valid tracks found.[/]");
                 AnsiConsole.MarkupLine("Press any key to continue");
                 Console.ReadKey(true);
                 return;
             }
 
-            var bookUri = new Uri(bookUrl);
-            var folderPath = (bookUri.Segments != null && bookUri.Segments.Length > 0)
-                ? Path.Combine(SettingsMenu.UserSettings.DownloadPath, bookUri.Segments[^1])
-                : SettingsMenu.UserSettings.DownloadPath;
+            var folderPath = Path.Combine(SettingsMenu.UserSettings.DownloadPath, SanitizeName(bookTitle));
             Directory.CreateDirectory(folderPath);
 
-            var chapters = JArray.Parse(tracks);
-            var fileNames = new List<string>();
-            foreach (var chapter in chapters)
+            AnsiConsole.MarkupLine($"[green]Found {tracks.Count} tracks[/]");
+
+            var trackCount = 1;
+            foreach (var track in tracks)
             {
-                var chapterUrl = chapter["chapter_link_dropbox"]?.ToString() ?? "";
-                if (chapterUrl == SkipChapter)
+                var src = track["src"]?.ToString();
+                if (string.IsNullOrEmpty(src))
                 {
                     continue;
                 }
 
-                var chapterName = chapter["name"]?.ToString() ?? "Unknown";
-                var fullUrl = chapterUrl.StartsWith("http") ? chapterUrl : BaseUrl + chapterUrl;
-                var fileName = chapterName.Replace("/", SlashReplaceString) + ".mp3";
-                fileNames.Add(fileName);
-                await DownloadFile(fullUrl, folderPath, fileName);
-            }
-            
-            if (SettingsMenu.UserSettings.ConvertMp3ToM4b)
-            {
-                foreach(var fileName in fileNames)
-                {
-                    await ConvertMp3FileToM4b(folderPath, fileName);
-                    if (SettingsMenu.UserSettings.DeleteMp3AfterDownload)
-                    {
-                        await DeleteMp3File(folderPath, fileName);
-                    }
-                }
+                var trackTitle = track["trackTitle"]?.ToString() ?? "Unknown";
+                await DownloadTrack(audioBookId, streamToken, src, trackTitle, folderPath);
+                AnsiConsole.MarkupLine($"[green]Completed:[/] {trackCount++} of {tracks.Count}");
             }
 
             AnsiConsole.MarkupLine("[green]Download finished[/]");
@@ -91,103 +123,237 @@ namespace TokyBay
             Console.ReadKey(true);
         }
 
-        public static async Task DownloadFile(string url, string folderPath, string fileName)
+        private static async Task DownloadTrack(string audioBookId, string streamToken, string trackSrc, string trackTitle, string folderPath)
         {
-            var response = await HttpHelper.GetHttpResponseAsync(url);
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                if (url.StartsWith(BaseUrl))
+                var sanitizedTitle = SanitizeName(trackTitle);
+                var tempFolder = Path.Combine(folderPath, "_temp_" + sanitizedTitle);
+                Directory.CreateDirectory(tempFolder);
+
+                AnsiConsole.MarkupLine($"[blue]Processing:[/] {trackTitle}");
+
+                var basePath = trackSrc.Substring(0, trackSrc.LastIndexOf('/') + 1);
+                var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc.Substring(trackSrc.LastIndexOf('/') + 1));
+
+                var m3u8Url = TokybookUrl + AudioBaseApiPath + escapedTrackSrc;
+                var m3u8Content = await DownloadM3u8Playlist(audioBookId, streamToken, m3u8Url, escapedTrackSrc);
+
+                if (string.IsNullOrEmpty(m3u8Content))
                 {
-                    var fallbackUrl = MediaFallbackUrl + url.Substring(BaseUrl.Length);
-                    response = await HttpHelper.GetHttpResponseAsync(fallbackUrl);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        AnsiConsole.MarkupLine($"[red]Failed to download {url} and fallback {fallbackUrl}[/]");
-                        return;
-                    }
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine($"[red]Failed to download {url}[/]");
+                    AnsiConsole.MarkupLine($"[red]Failed to download playlist for {trackTitle}[/]");
                     return;
+                }
+
+                var tsSegments = ParseTsSegments(m3u8Content);
+                if (tsSegments.Count == 0)
+                {
+                    AnsiConsole.MarkupLine($"[red]No segments found in playlist for {trackTitle}[/]");
+                    return;
+                }
+
+                await DownloadTsSegments(audioBookId, streamToken, basePath, tsSegments, tempFolder);
+
+                if (SettingsMenu.UserSettings.ConvertToMp3)
+                {
+                    var outputFile = Path.Combine(folderPath, sanitizedTitle + ".mp3");
+                    await MergeTsSegments(tempFolder, tsSegments, outputFile, trackTitle, isMp3Conversion: true);
+                }
+
+                if  (SettingsMenu.UserSettings.ConvertToM4b)
+                {
+                    var outputFile = Path.Combine(folderPath, sanitizedTitle + ".m4b");
+                    await MergeTsSegments(tempFolder, tsSegments, outputFile, trackTitle, isMp3Conversion: false);
+                }
+
+                Directory.Delete(tempFolder, true);
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error downloading track {trackTitle}: {ex.Message}[/]");
+            }
+        }
+
+        private static async Task<string> DownloadM3u8Playlist(string audioBookId, string streamToken, string m3u8Url, string trackSrc)
+        {
+            try
+            {
+                var response = await HttpUtil.GetTracksAsync(m3u8Url, audioBookId, streamToken, AudioBaseApiPath + trackSrc);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return string.Empty;
+                }
+
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error downloading m3u8: {ex.Message}[/]");
+                return string.Empty;
+            }
+        }
+
+        private static List<string> ParseTsSegments(string m3u8Content)
+        {
+            var segments = new List<string>();
+            var lines = m3u8Content.Split('\n');
+
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("#") && trimmed.EndsWith(".ts"))
+                {
+                    segments.Add(trimmed);
                 }
             }
 
-            var path = Path.Combine(folderPath, fileName);
-            var totalBytes = response.Content.Headers.ContentLength ?? 100;
+            return segments;
+        }
+
+        private static async Task DownloadTsSegments(string audioBookId, string streamToken, string basePath, List<string> segments, string outputFolder)
+        {
             await AnsiConsole.Progress().StartAsync(async ctx =>
             {
-                var task = ctx.AddTask($"[green]Downloading:[/] {fileName}", maxValue: totalBytes);
-                using (var responseStream = await response.Content.ReadAsStreamAsync())
-                using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+                var task = ctx.AddTask($"[green]Downloading segments[/]", maxValue: segments.Count);
+
+                for (int i = 0; i < segments.Count; i++)
                 {
-                    var buffer = new byte[8192];
-                    int read;
-                    while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    var segment = segments[i];
+                    var segmentUrl = TokybookUrl + AudioBaseApiPath + basePath + segment;
+                    var trackSrc = basePath + segment;
+
+                    var response = await HttpUtil.GetTracksAsync(segmentUrl, audioBookId, streamToken, AudioBaseApiPath + trackSrc);
+                    if (response.IsSuccessStatusCode)
                     {
-                        await fs.WriteAsync(buffer, 0, read);
-                        task.Increment(read);
+                        var segmentPath = Path.Combine(outputFolder, $"{i:D4}_{segment}");
+                        var bytes = await response.Content.ReadAsByteArrayAsync();
+                        await File.WriteAllBytesAsync(segmentPath, bytes);
                     }
+
+                    task.Increment(1);
                 }
             });
         }
 
-        private static async Task<string> GetTracksFromHtml(string bookUrl)
+        private static async Task MergeTsSegments(string tempFolder, List<string> segments, string outputFile, string trackTitle, bool isMp3Conversion)
         {
-            var html = await HttpHelper.GetHtmlAsync(bookUrl);
-            var htmlDoc = new HtmlDocument();
-            htmlDoc.LoadHtml(html);
-            var scripts = htmlDoc.DocumentNode.SelectNodes("//script");
-            if (scripts == null)
-            {
-                return string.Empty;
-            }
-
-            var tracks = string.Empty;
-            foreach (var script in scripts)
-            {
-                var match = Regex.Match(script.InnerText, "tracks\\s*=\\s*(\\[.*?\\])", RegexOptions.Singleline);
-                if (match.Success)
-                {
-                    tracks = match.Groups[1].Value;
-                    break;
-                }
-            }
-
-            return tracks;
-        }
-
-        private static async Task ConvertMp3FileToM4b(string folderPath, string fileName)
-        {
-            var inputFile = Path.Combine(folderPath, fileName);
-            var outputFile = inputFile.Replace(".mp3", ".m4b");
-
             FFmpeg.SetExecutablesPath(SettingsMenu.UserSettings.FFmpegDirectory);
+
+            var concatFile = Path.Combine(tempFolder, "concat.txt");
+            var concatLines = new List<string>();
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var segmentPath = Path.Combine(tempFolder, $"{i:D4}_{segments[i]}");
+                concatLines.Add($"file '{segmentPath}'");
+            }
+
+            await File.WriteAllLinesAsync(concatFile, concatLines);
+
             IConversion conversion = FFmpeg.Conversions.New();
-            conversion.AddParameter($"-i \"{inputFile}\"");
-            conversion.AddParameter("-c:a aac -b:a 64k");
+            conversion.AddParameter($"-f concat -safe 0 -i \"{concatFile}\"");
+            if (isMp3Conversion)
+            {
+                conversion.AddParameter("-c:a libmp3lame -b:a 128k");
+            }
+            else
+            {
+                conversion.AddParameter("-c:a aac -b:a 64k");
+            }
+
             conversion.SetOutput(outputFile);
 
+            var extension = isMp3Conversion ? "mp3" : "m4b";
             await AnsiConsole.Progress().StartAsync(async ctx =>
             {
-                var task = ctx.AddTask($"[green]Converting to m4b:[/] {fileName}", maxValue: 100);
+                var task = ctx.AddTask($"[green]Converting to {extension}:[/] {trackTitle}", maxValue: 100);
                 conversion.OnProgress += (sender, progress) =>
                 {
                     task.Value = progress.Percent;
                 };
-
                 await conversion.Start();
             });
         }
 
-        private static async Task DeleteMp3File(string folderPath, string fileName)
+        private static async Task<JObject?> GetPostDetails(string dynamicSlugId, JObject userIdentity)
         {
-            var filePath = Path.Combine(folderPath, fileName);
-            if (File.Exists(filePath))
+            try
             {
-                await Task.Run(() => File.Delete(filePath));
-                AnsiConsole.MarkupLine($"[green]File deleted:[/] {fileName}");
+                var payload = new JObject
+                {
+                    ["dynamicSlugId"] = dynamicSlugId,
+                    ["userIdentity"] = userIdentity
+                };
+
+                var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                var response = await HttpUtil.PostAsync(TokybookUrl + PostDetailsApiPath, content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    AnsiConsole.MarkupLine($"[red]Post details request failed: {response.StatusCode}[/]");
+                    return null;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JObject.Parse(json);
             }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error getting post details: {ex.Message}[/]");
+                return null;
+            }
+        }
+
+        private static async Task<JObject?> GetPlaylist(string audioBookId, string postDetailToken, string dynamicSlugId, JObject userIdentity)
+        {
+            try
+            {
+                var payload = new JObject
+                {
+                    ["audioBookId"] = audioBookId,
+                    ["postDetailToken"] = postDetailToken,
+                    ["userIdentity"] = new JObject
+                    {
+                        ["ipAddress"] = userIdentity["ipAddress"],
+                        ["timestamp"] = userIdentity["timestamp"],
+                        ["userAgent"] = userIdentity["userAgent"],
+                    }
+                };
+
+                var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                var response = await HttpUtil.PostAsync(TokybookUrl + PlaylistApiPath, content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    AnsiConsole.MarkupLine($"[red]Playlist request failed: {response.StatusCode}[/]");
+                    return null;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JObject.Parse(json);
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error getting playlist: {ex.Message}[/]");
+                return null;
+            }
+        }
+
+        private static string ExtractDynamicSlugId(string url)
+        {
+            var uri = new Uri(url);
+            var segments = uri.Segments;
+            if (segments.Length >= 3 && segments[1] == "post/")
+            {
+                return segments[2].TrimEnd('/');
+            }
+
+            return string.Empty;
+        }
+
+        private static string SanitizeName(string fileName)
+        {
+            return Regex.Replace(fileName, "[^A-Za-z0-9]+", "_");
         }
     }
 }
