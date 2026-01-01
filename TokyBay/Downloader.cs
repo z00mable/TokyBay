@@ -2,6 +2,8 @@
 using Spectre.Console;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
+using TokyBay.Models;
 using Xabe.FFmpeg;
 
 namespace TokyBay
@@ -12,6 +14,10 @@ namespace TokyBay
         private const string PostDetailsApiPath = "/api/v1/search/post-details";
         private const string PlaylistApiPath = "/api/v1/playlist";
         private const string AudioBaseApiPath = "/api/v1/public/audio/";
+
+        private const int MaxParallelDownloads = 2;
+        private const int MaxParallelConversions = 2;
+        private const int MaxSegmentsPerTrack = 3;
 
         public static async Task GetInput()
         {
@@ -103,10 +109,35 @@ namespace TokyBay
             Directory.CreateDirectory(folderPath);
 
             AnsiConsole.MarkupLine($"[green]Found {tracks.Count} tracks[/]");
+            AnsiConsole.MarkupLine($"[blue]Parallel downloads:[/] {MaxParallelDownloads}");
+            AnsiConsole.MarkupLine($"[blue]Parallel conversions:[/] {MaxParallelConversions}");
 
-            var trackCount = 1;
-            foreach (var track in tracks)
+            await ProcessTracksInParallel(tracks, audioBookId, streamToken, folderPath);
+
+            AnsiConsole.MarkupLine("[green]Download finished[/]");
+            AnsiConsole.MarkupLine("Press any key to continue");
+            Console.ReadKey(true);
+        }
+
+        private static async Task ProcessTracksInParallel(JArray tracks, string audioBookId, string streamToken, string folderPath)
+        {
+            var conversionChannel = Channel.CreateBounded<DownloadedTrack>(new BoundedChannelOptions(10)
             {
+                FullMode = BoundedChannelFullMode.Wait
+            });
+
+            var downloadSemaphore = new SemaphoreSlim(MaxParallelDownloads);
+            var completedDownloads = 0;
+            var completedConversions = 0;
+            var totalTracks = tracks.Count;
+            var lockObj = new object();
+
+            var downloadTasks = new List<Task>();
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                var track = tracks[i];
+                var trackNumber = i + 1;
+
                 var src = track["src"]?.ToString();
                 if (string.IsNullOrEmpty(src))
                 {
@@ -114,63 +145,167 @@ namespace TokyBay
                 }
 
                 var trackTitle = track["trackTitle"]?.ToString() ?? "Unknown";
-                await DownloadTrack(audioBookId, streamToken, src, trackTitle, folderPath);
-                AnsiConsole.MarkupLine($"[green]Completed:[/] {trackCount++} of {tracks.Count}");
+
+                downloadTasks.Add(Task.Run(async () =>
+                {
+                    await downloadSemaphore.WaitAsync();
+                    try
+                    {
+                        await Task.Delay(100 * trackNumber);
+
+                        var downloadedTrack = await DownloadTrackAsync(audioBookId, streamToken, src, trackTitle, folderPath, trackNumber, totalTracks);
+                        if (downloadedTrack != null)
+                        {
+                            await conversionChannel.Writer.WriteAsync(downloadedTrack);
+
+                            lock (lockObj)
+                            {
+                                completedDownloads++;
+                                AnsiConsole.MarkupLine($"[green]Downloaded:[/] {completedDownloads}/{totalTracks} - {trackTitle}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (lockObj)
+                        {
+                            AnsiConsole.MarkupLine($"[red]Download error for {trackTitle}: {ex.Message}[/]");
+                        }
+                    }
+                    finally
+                    {
+                        downloadSemaphore.Release();
+                    }
+                }));
             }
 
-            AnsiConsole.MarkupLine("[green]Download finished[/]");
-            AnsiConsole.MarkupLine("Press any key to continue");
-            Console.ReadKey(true);
+            var conversionTasks = new List<Task>();
+            for (int i = 0; i < MaxParallelConversions; i++)
+            {
+                conversionTasks.Add(Task.Run(async () =>
+                {
+                    await foreach (var downloadedTrack in conversionChannel.Reader.ReadAllAsync())
+                    {
+                        try
+                        {
+                            await ConvertTrackAsync(downloadedTrack);
+
+                            lock (lockObj)
+                            {
+                                completedConversions++;
+                                AnsiConsole.MarkupLine($"[cyan]Converted:[/] {completedConversions}/{totalTracks} - {downloadedTrack.TrackTitle}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            lock (lockObj)
+                            {
+                                AnsiConsole.MarkupLine($"[red]Conversion error for {downloadedTrack.TrackTitle}: {ex.Message}[/]");
+                            }
+                        }
+                    }
+                }));
+            }
+
+            await Task.WhenAll(downloadTasks);
+            conversionChannel.Writer.Complete();
+            await Task.WhenAll(conversionTasks);
         }
 
-        private static async Task DownloadTrack(string audioBookId, string streamToken, string trackSrc, string trackTitle, string folderPath)
+        private static async Task<DownloadedTrack?> DownloadTrackAsync(string audioBookId, string streamToken, string trackSrc, string trackTitle, string folderPath, int trackNumber, int totalTracks)
         {
             try
             {
                 var sanitizedTitle = SanitizeName(trackTitle);
-                var tempFolder = Path.Combine(folderPath, "_temp_" + sanitizedTitle);
+                var tempFolder = Path.Combine(folderPath, "_temp_" + sanitizedTitle + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 Directory.CreateDirectory(tempFolder);
-
-                AnsiConsole.MarkupLine($"[blue]Processing:[/] {trackTitle}");
 
                 var basePath = trackSrc.Substring(0, trackSrc.LastIndexOf('/') + 1);
                 var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc.Substring(trackSrc.LastIndexOf('/') + 1));
 
                 var m3u8Url = TokybookUrl + AudioBaseApiPath + escapedTrackSrc;
-                var m3u8Content = await DownloadM3u8Playlist(audioBookId, streamToken, m3u8Url, escapedTrackSrc);
+
+                string? m3u8Content = null;
+                for (int retry = 0; retry < 3; retry++)
+                {
+                    m3u8Content = await DownloadM3u8Playlist(audioBookId, streamToken, m3u8Url, escapedTrackSrc);
+                    if (!string.IsNullOrEmpty(m3u8Content))
+                    {
+                        break;
+                    }
+
+                    if (retry < 2)
+                    {
+                        await Task.Delay(1000 * (retry + 1));
+                    }
+                }
 
                 if (string.IsNullOrEmpty(m3u8Content))
                 {
                     AnsiConsole.MarkupLine($"[red]Failed to download playlist for {trackTitle}[/]");
-                    return;
+                    Directory.Delete(tempFolder, true);
+                    return null;
                 }
 
                 var tsSegments = ParseTsSegments(m3u8Content);
                 if (tsSegments.Count == 0)
                 {
                     AnsiConsole.MarkupLine($"[red]No segments found in playlist for {trackTitle}[/]");
-                    return;
+                    Directory.Delete(tempFolder, true);
+                    return null;
                 }
 
-                await DownloadTsSegments(audioBookId, streamToken, basePath, tsSegments, tempFolder);
+                await DownloadTsSegments(audioBookId, streamToken, basePath, tsSegments, tempFolder, trackTitle);
 
-                if (SettingsMenu.UserSettings.ConvertToMp3)
+                return new DownloadedTrack
                 {
-                    var outputFile = Path.Combine(folderPath, sanitizedTitle + ".mp3");
-                    await MergeTsSegments(tempFolder, tsSegments, outputFile, trackTitle, isMp3Conversion: true);
-                }
-
-                if  (SettingsMenu.UserSettings.ConvertToM4b)
-                {
-                    var outputFile = Path.Combine(folderPath, sanitizedTitle + ".m4b");
-                    await MergeTsSegments(tempFolder, tsSegments, outputFile, trackTitle, isMp3Conversion: false);
-                }
-
-                Directory.Delete(tempFolder, true);
+                    TempFolder = tempFolder,
+                    TrackTitle = trackTitle,
+                    FolderPath = folderPath,
+                    SanitizedTitle = sanitizedTitle,
+                    TsSegments = tsSegments,
+                    TrackNumber = trackNumber,
+                    TotalTracks = totalTracks
+                };
             }
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[red]Error downloading track {trackTitle}: {ex.Message}[/]");
+                return null;
+            }
+        }
+
+        private static async Task ConvertTrackAsync(DownloadedTrack track)
+        {
+            try
+            {
+                if (SettingsMenu.UserSettings.ConvertToMp3)
+                {
+                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".mp3");
+                    await MergeTsSegments(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: true);
+                }
+
+                if (SettingsMenu.UserSettings.ConvertToM4b)
+                {
+                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".m4b");
+                    await MergeTsSegments(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: false);
+                }
+
+                if (Directory.Exists(track.TempFolder))
+                {
+                    try
+                    {
+                        Directory.Delete(track.TempFolder, true);
+                    }
+                    catch
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error deleting temp folder: {track.TempFolder}[/]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Conversion failed: {ex.Message}", ex);
             }
         }
 
@@ -188,7 +323,7 @@ namespace TokyBay
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]Error downloading m3u8: {ex.Message}[/]");
+                AnsiConsole.MarkupLine($"[red]Error downloading playlist {m3u8Url}: {ex.Message}[/]");
                 return string.Empty;
             }
         }
@@ -210,29 +345,64 @@ namespace TokyBay
             return segments;
         }
 
-        private static async Task DownloadTsSegments(string audioBookId, string streamToken, string basePath, List<string> segments, string outputFolder)
+        private static async Task DownloadTsSegments(string audioBookId, string streamToken, string basePath, List<string> segments, string outputFolder, string trackTitle)
         {
-            await AnsiConsole.Progress().StartAsync(async ctx =>
+            var segmentSemaphore = new SemaphoreSlim(MaxSegmentsPerTrack);
+            var downloadTasks = new List<Task>();
+            var successCount = 0;
+            var lockObj = new object();
+
+            for (int i = 0; i < segments.Count; i++)
             {
-                var task = ctx.AddTask($"[green]Downloading segments[/]", maxValue: segments.Count);
+                var index = i;
+                var segment = segments[i];
 
-                for (int i = 0; i < segments.Count; i++)
+                downloadTasks.Add(Task.Run(async () =>
                 {
-                    var segment = segments[i];
-                    var segmentUrl = TokybookUrl + AudioBaseApiPath + basePath + segment;
-                    var trackSrc = basePath + segment;
-
-                    var response = await HttpUtil.GetTracksAsync(segmentUrl, audioBookId, streamToken, AudioBaseApiPath + trackSrc);
-                    if (response.IsSuccessStatusCode)
+                    await segmentSemaphore.WaitAsync();
+                    try
                     {
-                        var segmentPath = Path.Combine(outputFolder, $"{i:D4}_{segment}");
-                        var bytes = await response.Content.ReadAsByteArrayAsync();
-                        await File.WriteAllBytesAsync(segmentPath, bytes);
-                    }
+                        var segmentUrl = TokybookUrl + AudioBaseApiPath + basePath + segment;
+                        var trackSrc = basePath + segment;
 
-                    task.Increment(1);
-                }
-            });
+                        for (int retry = 0; retry < 3; retry++)
+                        {
+                            try
+                            {
+                                var response = await HttpUtil.GetTracksAsync(segmentUrl, audioBookId, streamToken, AudioBaseApiPath + trackSrc);
+                                if (response.IsSuccessStatusCode)
+                                {
+                                    var segmentPath = Path.Combine(outputFolder, $"{index:D4}_{segment}");
+                                    var bytes = await response.Content.ReadAsByteArrayAsync();
+                                    await File.WriteAllBytesAsync(segmentPath, bytes);
+
+                                    lock (lockObj)
+                                    {
+                                        successCount++;
+                                    }
+                                    break;
+                                }
+                            }
+                            catch
+                            {
+                                if (retry < 2)
+                                    await Task.Delay(500 * (retry + 1));
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        segmentSemaphore.Release();
+                    }
+                }));
+            }
+
+            await Task.WhenAll(downloadTasks);
+
+            if (successCount < segments.Count)
+            {
+                throw new Exception($"Only {successCount}/{segments.Count} segments downloaded successfully");
+            }
         }
 
         private static async Task MergeTsSegments(string tempFolder, List<string> segments, string outputFile, string trackTitle, bool isMp3Conversion)
@@ -245,7 +415,16 @@ namespace TokyBay
             for (int i = 0; i < segments.Count; i++)
             {
                 var segmentPath = Path.Combine(tempFolder, $"{i:D4}_{segments[i]}");
-                concatLines.Add($"file '{segmentPath}'");
+                if (File.Exists(segmentPath))
+                {
+                    var escapedPath = segmentPath.Replace("'", "'\\''");
+                    concatLines.Add($"file '{escapedPath}'");
+                }
+            }
+
+            if (concatLines.Count == 0)
+            {
+                throw new Exception("No segments available for merging");
             }
 
             await File.WriteAllLinesAsync(concatFile, concatLines);
@@ -262,17 +441,7 @@ namespace TokyBay
             }
 
             conversion.SetOutput(outputFile);
-
-            var extension = isMp3Conversion ? "mp3" : "m4b";
-            await AnsiConsole.Progress().StartAsync(async ctx =>
-            {
-                var task = ctx.AddTask($"[green]Converting to {extension}:[/] {trackTitle}", maxValue: 100);
-                conversion.OnProgress += (sender, progress) =>
-                {
-                    task.Value = progress.Percent;
-                };
-                await conversion.Start();
-            });
+            await conversion.Start();
         }
 
         private static async Task<JObject?> GetPostDetails(string dynamicSlugId, JObject userIdentity)
