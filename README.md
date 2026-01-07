@@ -1,41 +1,28 @@
 # TokyBay
 
-Search & Download audiobooks from Tokybook and convert it automatically to audiobook friendly M4B format or good old MP3 format.
+Search & download audiobooks from [Tokybook.com](https://tokybook.com) and convert it automatically to audiobook friendly M4B format or good old MP3 format.
+No installation is needed. Just download the latest release for your system at https://github.com/z00mable/TokyBay/releases/latest.
 
 > [!Note]
-> Tokybay is updated to work with [Tokybook.com](https://tokybook.com) latest changes to their audiobook API.
+> This project is intended for educational purposes only. Please respect copyright laws and the terms of service of the respective websites.
 
-## Contents
+![Last Updated](https://img.shields.io/github/last-commit/z00mable/TokyBay?label=Last%20Updated)
+![Repo Stars](https://img.shields.io/github/stars/z00mable/TokyBay?style=social)
+![C#](https://img.shields.io/badge/C%23-239120?style=flat&logo=unity&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Cross--Platform-009688?logo=windows&logoColor=white)
+![License](https://img.shields.io/github/license/z00mable/TokyBay?color=orange)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+![Issues](https://img.shields.io/github/issues/z00mable/TokyBay?color=informational)
 
-- [Download](#download)
-- [Usage](#Usage)
-- [Installation](#Installation)
-- [Credits](#Credits)
+## Supported Sites
+
+* [tokybook.com](https://tokybook.com)
 
 ## Download
 
 Download the latest release at https://github.com/z00mable/TokyBay/releases/latest
 
-## Usage
-
-- Start TokyBay
-  
-    ```shell
-    tokybay
-    ```
-
-- If TokyBay is invoked with `-d` or `--directory` as arguments it will change to a custom directory
-
-    ```shell
-    tokybay -d "C:\Users\User\Music"
-    ```
-
-> [!Tip]
->
-> - If `-d` or `--directory` is not invoked, TokyBay will download audiobooks to current directory. But directory can be change inside TokyBay's in-app settings.
->
-
-### Features
+## Features
 1. **Search book**: Search and find audiobook from Tokybook.com
 2. **Download from URL**: Directly download an audiobook using its URL.
 3. **Convert to superior M4B format**: Convert downloaded files automatically to M4B audio book format.
@@ -59,6 +46,25 @@ Download the latest release at https://github.com/z00mable/TokyBay/releases/late
 > [!Note]
 >
 > - On first start, TokyBoy will automatically download [FFmpeg](https://github.com/FFmpeg/FFmpeg) to current directory. Can be changed in in-app settings later.
+>
+
+## Usage
+
+- Start TokyBay
+  
+    ```shell
+    tokybay
+    ```
+
+- If TokyBay is invoked with `-d` or `--directory` as arguments it will download files to a custom directory
+
+    ```shell
+    tokybay -d "C:\Users\User\Music"
+    ```
+
+> [!Tip]
+>
+> - If `-d` or `--directory` is not invoked, TokyBay will download audiobooks to current directory. But directory can be change inside TokyBay's in-app settings.
 >
 
 ## Installation
