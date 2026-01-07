@@ -30,6 +30,11 @@ namespace TokyBay
         {
             if (ExistsFFmpegFile(UserSettings.FFmpegDirectory))
             {
+                if (string.IsNullOrWhiteSpace(UserSettings.FFmpegDirectory))
+                {
+                    UserSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
+                }
+
                 return;
             }
 
@@ -54,8 +59,15 @@ namespace TokyBay
 
         public static async Task GetSettings()
         {
-            var exit = false;
-            while (!exit)
+            const string changeDownload = "Change download directory";
+            const string changeFFmpegd = "Change FFmpeg directory";
+            const string toggleMp3 = "Toggle 'Download files as mp3'";
+            const string toggleM4b = "Toggle 'Download files as m4b'";
+            const string exit = "Exit";
+
+            var exitPressed = false;
+
+            while (!exitPressed)
             {
                 AnsiConsole.Clear();
                 Constants.ShowHeader();
@@ -65,30 +77,30 @@ namespace TokyBay
                     new SelectionPrompt<string>()
                         .AddChoices(new[]
                         {
-                            "Change download directory",
-                            "Change FFmpeg directory",
-                            "Toggle 'Download files as mp3'",
-                            "Toggle 'Download files as m4b'",
-                            "Exit"
+                            changeDownload,
+                            changeFFmpegd,
+                            toggleMp3,
+                            toggleM4b,
+                            exit
                         })
                 );
 
                 switch (choice)
                 {
-                    case "Change download directory":
+                    case changeDownload:
                         await ChangeDownloadDirectory();
                         break;
-                    case "Change FFmpeg directory":
+                    case changeFFmpegd:
                         await ChangeFfmpegDirectory();
                         break;
-                    case "Toggle 'Download files as mp3'":
+                    case toggleMp3:
                         await DownloadAsMp3();
                         break;
-                    case "Toggle 'Download files as m4b'":
+                    case toggleM4b:
                         await DownloadAsM4b();
                         break;
-                    case "Exit":
-                        exit = true;
+                    case exit:
+                        exitPressed = true;
                         break;
                 }
             }

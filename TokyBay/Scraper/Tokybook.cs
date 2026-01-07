@@ -6,38 +6,18 @@ using System.Threading.Channels;
 using TokyBay.Models;
 using Xabe.FFmpeg;
 
-namespace TokyBay
+namespace TokyBay.Scraper
 {
-    public static class Downloader
+    public static class Tokybook
     {
         private const string TokybookUrl = "https://tokybook.com";
         private const string PostDetailsApiPath = "/api/v1/search/post-details";
         private const string PlaylistApiPath = "/api/v1/playlist";
         private const string AudioBaseApiPath = "/api/v1/public/audio/";
 
-        private const int MaxParallelDownloads = 2;
+        private const int MaxParallelDownloads = 3;
         private const int MaxParallelConversions = 2;
-        private const int MaxSegmentsPerTrack = 3;
-
-        public static async Task GetInput()
-        {
-            AnsiConsole.Clear();
-            Constants.ShowHeader();
-            AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsMenu.UserSettings.DownloadPath}");
-            while (true)
-            {
-                AnsiConsole.WriteLine();
-                var url = AnsiConsole.Ask<string>("Enter URL:");
-                if (url == null || !url.StartsWith("https://tokybook.com/"))
-                {
-                    AnsiConsole.MarkupLine("[red]Invalid URL! Try again.[/]");
-                    continue;
-                }
-
-                await GetChapters(url);
-                break;
-            }
-        }
+        private const int MaxSegmentsPerTrack = 5;
 
         public static async Task GetChapters(string bookUrl)
         {

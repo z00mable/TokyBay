@@ -6,23 +6,53 @@ namespace TokyBay
     {
         public static async Task ShowMainMenu()
         {
-            string[] options = { "Search book", "Download from URL", "Settings", "Exit" };
+            const string search = "Search book on Tokybook.com";
+            const string download = "Download from URL";
+            const string settings = "Settings";
+            const string exit = "Exit";
+
+            string[] options = { search, download, settings, exit };
+
             while (true)
             {
                 var selection = DisplayMenu("Choose action:", options);
                 switch (selection)
                 {
-                    case "Search book":
+                    case search:
                         await BookSearcher.PromptSearchBook();
                         break;
-                    case "Download from URL":
-                        await Downloader.GetInput();
+                    case download:
+                        await GetUrlInput();
                         break;
-                    case "Settings":
+                    case settings:
                         await SettingsMenu.GetSettings();
                         break;
-                    case "Exit":
+                    case exit:
                         return;
+                }
+            }
+        }
+
+        public static async Task GetUrlInput()
+        {
+            AnsiConsole.Clear();
+            Constants.ShowHeader();
+            AnsiConsole.MarkupLine($"[grey]Supported audiobook sites:[/]");
+            AnsiConsole.MarkupLine($" - https://tokybook.com/");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsMenu.UserSettings.DownloadPath}");
+            while (true)
+            {
+                AnsiConsole.WriteLine();
+                var url = AnsiConsole.Ask<string>("Enter URL:");
+                switch (url)
+                {
+                    case { } when url.StartsWith("https://tokybook.com/"):
+                        await Scraper.Tokybook.GetChapters(url);
+                        break;
+                    default:
+                        AnsiConsole.MarkupLine("[red]Invalid URL! Try again.[/]");
+                        continue;
                 }
             }
         }

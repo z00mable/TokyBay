@@ -26,6 +26,9 @@ namespace TokyBay
             var allBookTitles = new List<string>();
             var allDynamicSlugIds = new List<string>();
 
+            const string loadMoreSelection = "[green]Load more[/]";
+            const string exitSelection = "[red]Exit[/]";
+
             while (true)
             {
                 var url = $"https://tokybook.com/search?q={Uri.EscapeDataString(query)}";
@@ -72,17 +75,17 @@ namespace TokyBay
                 var menuOptions = new List<string>(allBookTitles);
                 if (hasMoreHits)
                 {
-                    menuOptions.Add("[green]Load more[/]");
+                    menuOptions.Add(loadMoreSelection);
                 }
 
-                menuOptions.Add("[red]Exit[/]");
+                menuOptions.Add(exitSelection);
                 var selection = MenuHandler.DisplayMenu("Select a book:", menuOptions.ToArray());
 
-                if (selection == "[red]Exit[/]")
+                if (selection == exitSelection)
                 {
                     return;
                 }
-                else if (selection == "[green]Load more[/]")
+                else if (selection == loadMoreSelection)
                 {
                     hasMoreHits = false;
                     offset += limit;
@@ -93,7 +96,7 @@ namespace TokyBay
                     var selectedIndex = allBookTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
-                        await Downloader.GetChapters(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
+                        await Scraper.Tokybook.GetChapters(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
                         return;
                     }
                 }
