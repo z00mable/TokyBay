@@ -5,13 +5,60 @@ using System.Text.Json;
 using TokyBay.Models;
 using Xabe.FFmpeg.Downloader;
 
-namespace TokyBay
+namespace TokyBay.Pages
 {
-    public static class SettingsMenu
+    public static class SettingsPage
     {
         public static UserSettings UserSettings { get; set; } = new UserSettings();
 
-        public static async Task SetSettings(IConfiguration config)
+        public static async Task ShowAsync()
+        {
+            const string changeDownload = "Change download directory";
+            const string changeFFmpegd = "Change FFmpeg directory";
+            const string toggleMp3 = "Toggle 'Download files as mp3'";
+            const string toggleM4b = "Toggle 'Download files as m4b'";
+            const string exit = "Exit";
+
+            string[] options = { changeDownload, changeFFmpegd, toggleMp3, toggleM4b, exit };
+
+            var exitPressed = false;
+
+            while (!exitPressed)
+            {
+                Program.CustomAnsiConsole.Clear();
+                MenuHandler.ShowHeader();
+                ShowCurrentSettings();
+                Program.CustomAnsiConsole.WriteLine();
+                var selection = await MenuHandler.DisplayPartialPromptAsync(string.Empty, options);
+                if (selection == null)
+                {
+                    return;
+                }
+
+                switch (selection)
+                {
+                    case changeDownload:
+                        await ChangeDownloadDirectoryAsync();
+                        break;
+                    case changeFFmpegd:
+                        await ChangeFfmpegDirectoryAsync();
+                        break;
+                    case toggleMp3:
+                        await DownloadAsMp3Async();
+                        break;
+                    case toggleM4b:
+                        await DownloadAsM4bAsync();
+                        break;
+                    case exit:
+                        exitPressed = true;
+                        break;
+                }
+            }
+
+            await Task.CompletedTask;
+        }
+
+        public static async Task SetSettingsAsync(IConfiguration config)
         {
             config.GetSection("UserSettings").Bind(UserSettings);
 
@@ -20,13 +67,13 @@ namespace TokyBay
                 var windowsMusicFolder = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "\\Music" : string.Empty;
                 var userPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + windowsMusicFolder;
                 UserSettings.DownloadPath = userPath;
-                await PersistSettings();
+                await PersistSettingsAsync();
             }
 
             await Task.CompletedTask;
         }
 
-        public static async Task DownloadFFmpeg()
+        public static async Task DownloadFFmpegAsync()
         {
             if (ExistsFFmpegFile(UserSettings.FFmpegDirectory))
             {
@@ -38,7 +85,7 @@ namespace TokyBay
                 return;
             }
 
-            await AnsiConsole.Status()
+            await Program.CustomAnsiConsole.Status()
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("[green]Downloading FFmpeg files...[/]", async ctx =>
                 {
@@ -47,64 +94,14 @@ namespace TokyBay
 
             UserSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
 
-            AnsiConsole.MarkupLine($"[green]'FFmpeg successfully downloaded to:[/] {UserSettings.FFmpegDirectory}");
+            Program.CustomAnsiConsole.MarkupLine($"[green]'FFmpeg successfully downloaded to:[/] {UserSettings.FFmpegDirectory}");
             await Task.Delay(1000);
         }
 
-        public static async Task PersistSettings()
+        public static async Task PersistSettingsAsync()
         {
             var userSettings = JsonSerializer.Serialize(new { UserSettings }, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync("appsettings.json", userSettings);
-        }
-
-        public static async Task GetSettings()
-        {
-            const string changeDownload = "Change download directory";
-            const string changeFFmpegd = "Change FFmpeg directory";
-            const string toggleMp3 = "Toggle 'Download files as mp3'";
-            const string toggleM4b = "Toggle 'Download files as m4b'";
-            const string exit = "Exit";
-
-            var exitPressed = false;
-
-            while (!exitPressed)
-            {
-                AnsiConsole.Clear();
-                Constants.ShowHeader();
-                ShowCurrentSettings();
-                AnsiConsole.WriteLine();
-                var choice = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .AddChoices(new[]
-                        {
-                            changeDownload,
-                            changeFFmpegd,
-                            toggleMp3,
-                            toggleM4b,
-                            exit
-                        })
-                );
-
-                switch (choice)
-                {
-                    case changeDownload:
-                        await ChangeDownloadDirectory();
-                        break;
-                    case changeFFmpegd:
-                        await ChangeFfmpegDirectory();
-                        break;
-                    case toggleMp3:
-                        await DownloadAsMp3();
-                        break;
-                    case toggleM4b:
-                        await DownloadAsM4b();
-                        break;
-                    case exit:
-                        exitPressed = true;
-                        break;
-                }
-            }
-            await Task.CompletedTask;
         }
 
         private static void ShowCurrentSettings()
@@ -122,56 +119,66 @@ namespace TokyBay
                 Border = BoxBorder.Double
             };
 
-            AnsiConsole.Write(panel);
+            Program.CustomAnsiConsole.Write(panel);
         }
 
-        private static async Task ChangeDownloadDirectory()
+        private static async Task ChangeDownloadDirectoryAsync()
         {
-            var newPath = AnsiConsole.Ask<string>("Enter new download directory:");
+            var (newPath, cancelled) = await MenuHandler.DisplayAskAsync<string>("Enter new download directory:");
+            if (cancelled)
+            {
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(newPath) && Path.Exists(newPath))
             {
                 UserSettings.DownloadPath = newPath;
-                await PersistSettings();
-                AnsiConsole.MarkupLine("[green]Download directory updated.[/]");
+                await PersistSettingsAsync();
+                Program.CustomAnsiConsole.MarkupLine("[green]Download directory updated.[/]");
                 await Task.Delay(1000);
             }
             else
             {
-                AnsiConsole.MarkupLine("[red]Directory does not exist.[/]");
+                Program.CustomAnsiConsole.MarkupLine("[red]Directory does not exist.[/]");
                 await Task.Delay(1000);
             }
         }
 
-        private static async Task ChangeFfmpegDirectory()
+        private static async Task ChangeFfmpegDirectoryAsync()
         {
-            var newFFmpegPath = AnsiConsole.Ask<string>("Enter FFmpeg directory path:");
+            var (newFFmpegPath, cancelled) = await MenuHandler.DisplayAskAsync<string>("Enter new download directory:");
+            if (cancelled)
+            {
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(newFFmpegPath) && ExistsFFmpegFile(newFFmpegPath))
             {
                 UserSettings.FFmpegDirectory = newFFmpegPath;
-                await PersistSettings();
-                AnsiConsole.MarkupLine("[green]FFmpeg directory updated.[/]");
+                await PersistSettingsAsync();
+                Program.CustomAnsiConsole.MarkupLine("[green]FFmpeg directory updated.[/]");
                 await Task.Delay(1000);
             }
             else
             {
-                AnsiConsole.MarkupLine("[red]No FFmpeg found in directory.[/]");
+                Program.CustomAnsiConsole.MarkupLine("[red]No FFmpeg found in directory.[/]");
                 await Task.Delay(1000);
             }
         }
 
-        private static async Task DownloadAsMp3()
+        private static async Task DownloadAsMp3Async()
         {
             UserSettings.ConvertToMp3 = !UserSettings.ConvertToMp3;
-            await PersistSettings();
-            AnsiConsole.MarkupLine("[green]'Download files as mp3' updated.[/]");
+            await PersistSettingsAsync();
+            Program.CustomAnsiConsole.MarkupLine("[green]'Download files as mp3' updated.[/]");
             await Task.Delay(1000);
         }
 
-        private static async Task DownloadAsM4b()
+        private static async Task DownloadAsM4bAsync()
         {
             UserSettings.ConvertToM4b = !UserSettings.ConvertToM4b;
-            await PersistSettings();
-            AnsiConsole.MarkupLine("[green]'Download files as m4b' updated.[/]");
+            await PersistSettingsAsync();
+            Program.CustomAnsiConsole.MarkupLine("[green]'Download files as m4b' updated.[/]");
             await Task.Delay(1000);
         }
 

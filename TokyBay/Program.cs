@@ -1,8 +1,12 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Spectre.Console;
 using TokyBay;
+using TokyBay.Pages;
 
-class Program
+static class Program
 {
+    public static EscapeCancellableConsole CustomAnsiConsole = new EscapeCancellableConsole(AnsiConsole.Console);
+
     static async Task Main(string[] args)
     {
         IConfiguration config = new ConfigurationBuilder()
@@ -10,22 +14,22 @@ class Program
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
             .Build();
 
-        await SettingsMenu.SetSettings(config);
+        await SettingsPage.SetSettingsAsync(config);
 
         for (int i = 0; i < args.Length; i++)
         {
             if ((args[i] == "-d" || args[i] == "--directory") && i + 1 < args.Length)
             {
-                if (args[i + 1] != SettingsMenu.UserSettings.DownloadPath)
+                if (args[i + 1] != SettingsPage.UserSettings.DownloadPath)
                 {
-                    SettingsMenu.UserSettings.DownloadPath = args[i + 1];
-                    await SettingsMenu.PersistSettings();
+                    SettingsPage.UserSettings.DownloadPath = args[i + 1];
+                    await SettingsPage.PersistSettingsAsync();
                 }
             }
         }
 
-        await SettingsMenu.DownloadFFmpeg();
+        await SettingsPage.DownloadFFmpegAsync();
 
-        await MenuHandler.ShowMainMenu();
+        await MainPage.ShowAsync();
     }
 }

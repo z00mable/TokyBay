@@ -2,23 +2,28 @@
 using Spectre.Console;
 using System.Text;
 
-namespace TokyBay
+namespace TokyBay.Pages
 {
-    public static class BookSearcher
+    public static class SearchTokybookPage
     {
         private const string TokybookUrl = "https://tokybook.com";
         private const string SearchApiPath = "/api/v1/search";
         private const string PostDetailsApiPath = "/post/";
 
-        public static async Task PromptSearchBook()
+        public static async Task ShowAsync()
         {
-            AnsiConsole.Clear();
-            Constants.ShowHeader();
-            var query = AnsiConsole.Ask<string>("Enter search query:");
-            await SearchBook(query);
+            Program.CustomAnsiConsole.Clear();
+            MenuHandler.ShowHeader();
+            var (query, cancelled) = await MenuHandler.DisplayAskAsync<string>("Enter search query:");
+            if (cancelled)
+            {
+                return;
+            }
+
+            await SearchBookAsync(query!);
         }
 
-        public static async Task SearchBook(string query)
+        public static async Task SearchBookAsync(string query)
         {
             var offset = 0;
             var limit = 12;
@@ -31,16 +36,14 @@ namespace TokyBay
 
             while (true)
             {
-                var url = $"https://tokybook.com/search?q={Uri.EscapeDataString(query)}";
-                var html = string.Empty;
-                await AnsiConsole.Status()
+                await Program.CustomAnsiConsole.Status()
                     .SpinnerStyle(Style.Parse("blue bold"))
                     .StartAsync("Searching...", async ctx =>
                     {
-                        var searchResultsResponse = await GetSearchResults(query, offset, limit);
+                        var searchResultsResponse = await GetSearchResultsAsync(query, offset, limit);
                         if (searchResultsResponse == null)
                         {
-                            AnsiConsole.MarkupLine("[red]Searching failed.[/]");
+                            Program.CustomAnsiConsole.MarkupLine("[red]Searching failed.[/]");
                             return;
                         }
 
@@ -65,8 +68,8 @@ namespace TokyBay
                         }
 
                         var totalHitsString = searchResultsResponse["totalHits"]?.ToString() ?? string.Empty;
-                        int.TryParse(totalHitsString, out int totalHits);
-                        if (totalHits > offset + limit)
+                        var parseSucceeded = int.TryParse(totalHitsString, out int totalHits);
+                        if (parseSucceeded && totalHits > offset + limit)
                         {
                             hasMoreHits = true;
                         }
@@ -79,9 +82,9 @@ namespace TokyBay
                 }
 
                 menuOptions.Add(exitSelection);
-                var selection = MenuHandler.DisplayMenu("Select a book:", menuOptions.ToArray());
+                var selection = await MenuHandler.DisplayPromptAsync("Select a book:", menuOptions.ToArray());
 
-                if (selection == exitSelection)
+                if (selection == null || selection == exitSelection)
                 {
                     return;
                 }
@@ -96,18 +99,18 @@ namespace TokyBay
                     var selectedIndex = allBookTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
-                        await Scraper.Tokybook.GetChapters(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
+                        await Scraper.Tokybook.DownloadBookAsync(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
                         return;
                     }
                 }
             }
         }
 
-        private static async Task<JObject?> GetSearchResults(string query, int offset, int limit)
+        private static async Task<JObject?> GetSearchResultsAsync(string query, int offset, int limit)
         {
             try
             {
-                var userIdentity = await TokybookApiHandler.GetUserIdentity();
+                var userIdentity = await IpifyHandler.GetUserIdentityAsync();
                 var payload = new JObject
                 {
                     ["limit"] = limit,
@@ -121,7 +124,7 @@ namespace TokyBay
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    AnsiConsole.MarkupLine($"[red]Search request failed: {response.StatusCode}[/]");
+                    Program.CustomAnsiConsole.MarkupLine($"[red]Search request failed: {response.StatusCode}[/]");
                     return null;
                 }
 
@@ -130,7 +133,7 @@ namespace TokyBay
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]Error getting search results: {ex.Message}[/]");
+                Program.CustomAnsiConsole.MarkupLine($"[red]Error getting search results: {ex.Message}[/]");
                 return null;
             }
         }

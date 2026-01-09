@@ -6,19 +6,18 @@
 
         public static async Task<HttpResponseMessage> GetAsync(string url)
         {
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            }
+            return await GetAsync(url, []);
         }
 
-        public static async Task<HttpResponseMessage> GetTracksAsync(string url, string audioBookId, string streamToken, string trackSrc)
+        public static async Task<HttpResponseMessage> GetAsync(string url, Dictionary<string, string> headers)
         {
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("x-audiobook-id", audioBookId);
-                request.Headers.Add("x-stream-token", streamToken);
-                request.Headers.Add("x-track-src", trackSrc);
+                foreach (var header in headers)
+                {
+                    request.Headers.Add(header.Key, header.Value);
+                }
+
                 return await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             }
         }

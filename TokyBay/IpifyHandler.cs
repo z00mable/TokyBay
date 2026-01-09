@@ -3,11 +3,11 @@ using Spectre.Console;
 
 namespace TokyBay
 {
-    public static class TokybookApiHandler
+    public static class IpifyHandler
     {
         private const string IpifyUrl = "https://api.ipify.org?format=json";
 
-        public static async Task<JObject> GetUserIdentity()
+        public static async Task<JObject> GetUserIdentityAsync()
         {
             try
             {
