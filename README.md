@@ -8,7 +8,7 @@ No installation is needed. Just download the latest release for your system at h
 
 ![Last Updated](https://img.shields.io/github/last-commit/z00mable/TokyBay?label=Last%20Updated)
 ![Repo Stars](https://img.shields.io/github/stars/z00mable/TokyBay?style=social)
-![C#](https://img.shields.io/badge/C%23-239120?style=flat&logo=unity&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-C--Sharp-brightgreen?style=flat&logo=csharp)
 ![Platform](https://img.shields.io/badge/Platform-Cross--Platform-009688?logo=windows&logoColor=white)
 ![License](https://img.shields.io/github/license/z00mable/TokyBay?color=orange)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
