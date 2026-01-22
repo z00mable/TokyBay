@@ -3,10 +3,12 @@ using Spectre.Console.Rendering;
 
 namespace TokyBay
 {
-    sealed class EscapeCancellableConsole : IAnsiConsole
+    public class EscapeCancellableConsole : IAnsiConsole
     {
-        readonly IAnsiConsole console;
-        readonly object lockObj = new();
+        private readonly IAnsiConsole console;
+        private readonly object lockObj = new();
+        private CancellationTokenSource _cts = null!;
+        private EscapeCancellableInput _input = null!;
 
         public EscapeCancellableConsole(IAnsiConsole console)
         {
@@ -14,29 +16,14 @@ namespace TokyBay
             ResetCancellationToken();
         }
 
-        private CancellationTokenSource _cts = null!;
-        private EscapeCancellableInput _input = null!;
-
         public CancellationTokenSource EscapeCancellationTokenSource
         {
-            get
-            {
-                lock (lockObj)
-                {
-                    return _cts;
-                }
-            }
+            get { lock (lockObj) { return _cts; } }
         }
 
         public IAnsiConsoleInput Input
         {
-            get
-            {
-                lock (lockObj)
-                {
-                    return _input;
-                }
-            }
+            get { lock (lockObj) { return _input; } }
         }
 
         public void ResetCancellationToken()
@@ -53,6 +40,7 @@ namespace TokyBay
         public IAnsiConsoleCursor Cursor => console.Cursor;
         public IExclusivityMode ExclusivityMode => console.ExclusivityMode;
         public RenderPipeline Pipeline => console.Pipeline;
+
         public void Clear(bool home) => console.Clear(home);
         public void Write(IRenderable renderable) => console.Write(renderable);
 
@@ -71,7 +59,7 @@ namespace TokyBay
         }
     }
 
-    sealed class EscapeCancellableInput(IAnsiConsoleInput originalInput, CancellationTokenSource cts) : IAnsiConsoleInput
+    public class EscapeCancellableInput(IAnsiConsoleInput originalInput, CancellationTokenSource cts) : IAnsiConsoleInput
     {
         public bool IsKeyAvailable() => originalInput.IsKeyAvailable();
 

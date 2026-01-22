@@ -4,14 +4,18 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using TokyBay.Models;
-using TokyBay.Pages;
+using TokyBay.Services;
 using Xabe.FFmpeg;
 
 namespace TokyBay.Scraper
 {
-    public static class Tokybook
+    public class Tokybook(
+        IAnsiConsole _console,
+        IHttpService httpUtil,
+        IIpifyService ipifyService,
+        ISettingsService settingsService)
     {
-        private const string TokybookUrl = "https://tokybook.com";
+        private const string TokybookBaseUrl = "https://tokybook.com";
         private const string PostDetailsApiPath = "/api/v1/search/post-details";
         private const string PlaylistApiPath = "/api/v1/playlist";
         private const string AudioBaseApiPath = "/api/v1/public/audio/";
@@ -20,25 +24,30 @@ namespace TokyBay.Scraper
         private const int MaxParallelConversions = 2;
         private const int MaxSegmentsPerTrack = 5;
 
-        public static async Task DownloadBookAsync(string bookUrl)
+        private readonly IAnsiConsole _console = _console;
+        private readonly IHttpService _httpUtil = httpUtil;
+        private readonly IIpifyService _ipifyService = ipifyService;
+        private readonly UserSettings _settings = settingsService.GetSettings();
+
+        public async Task DownloadBookAsync(string bookUrl)
         {
             JArray? tracks = null;
             string bookTitle = string.Empty;
             string audioBookId = string.Empty;
             string streamToken = string.Empty;
 
-            await Program.CustomAnsiConsole.Status()
+            await _console.Status()
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
                     ctx.Status("Getting user identity...");
-                    var userIdentity = await IpifyHandler.GetUserIdentityAsync();
+                    var userIdentity = await _ipifyService.GetUserIdentityAsync();
 
                     ctx.Status("Extracting dynamic slug...");
                     var dynamicSlugId = ExtractDynamicSlugId(bookUrl);
                     if (string.IsNullOrEmpty(dynamicSlugId))
                     {
-                        Program.CustomAnsiConsole.MarkupLine("[red]Could not extract slug from URL.[/]");
+                        _console.MarkupLine("[red]Could not extract slug from URL.[/]");
                         return;
                     }
 
@@ -46,7 +55,7 @@ namespace TokyBay.Scraper
                     var postDetails = await GetPostDetailssync(dynamicSlugId, userIdentity);
                     if (postDetails == null)
                     {
-                        Program.CustomAnsiConsole.MarkupLine("[red]Failed to get post details.[/]");
+                        _console.MarkupLine("[red]Failed to get post details.[/]");
                         return;
                     }
 
@@ -56,7 +65,7 @@ namespace TokyBay.Scraper
 
                     if (string.IsNullOrEmpty(audioBookId) || string.IsNullOrEmpty(postDetailToken))
                     {
-                        Program.CustomAnsiConsole.MarkupLine("[red]Missing audioBookId or postDetailToken.[/]");
+                        _console.MarkupLine("[red]Missing audioBookId or postDetailToken.[/]");
                         return;
                     }
 
@@ -64,7 +73,7 @@ namespace TokyBay.Scraper
                     var playlistResponse = await GetPlaylistAsync(audioBookId, postDetailToken, dynamicSlugId, userIdentity);
                     if (playlistResponse == null)
                     {
-                        Program.CustomAnsiConsole.MarkupLine("[red]Failed to get playlist.[/]");
+                        _console.MarkupLine("[red]Failed to get playlist.[/]");
                         return;
                     }
 
@@ -73,34 +82,34 @@ namespace TokyBay.Scraper
 
                     if (string.IsNullOrEmpty(streamToken))
                     {
-                        Program.CustomAnsiConsole.MarkupLine("[red]Missing streamToken.[/]");
+                        _console.MarkupLine("[red]Missing streamToken.[/]");
                         return;
                     }
                 });
 
             if (tracks == null || tracks.Count == 0)
             {
-                Program.CustomAnsiConsole.MarkupLine("[red]No valid tracks found.[/]");
-                Program.CustomAnsiConsole.MarkupLine("Press any key to continue");
+                _console.MarkupLine("[red]No valid tracks found.[/]");
+                _console.MarkupLine("Press any key to continue");
                 Console.ReadKey(true);
                 return;
             }
 
-            var folderPath = Path.Combine(SettingsPage.UserSettings.DownloadPath, SanitizeName(bookTitle));
+            var folderPath = Path.Combine(_settings.DownloadPath, SanitizeName(bookTitle));
             Directory.CreateDirectory(folderPath);
 
-            Program.CustomAnsiConsole.MarkupLine($"[green]Found {tracks.Count} tracks[/]");
-            Program.CustomAnsiConsole.MarkupLine($"[blue]Parallel downloads:[/] {MaxParallelDownloads}");
-            Program.CustomAnsiConsole.MarkupLine($"[blue]Parallel conversions:[/] {MaxParallelConversions}");
+            _console.MarkupLine($"[green]Found {tracks.Count} tracks[/]");
+            _console.MarkupLine($"[blue]Parallel downloads:[/] {MaxParallelDownloads}");
+            _console.MarkupLine($"[blue]Parallel conversions:[/] {MaxParallelConversions}");
 
             await ProcessTracksInParallelAsync(tracks, audioBookId, streamToken, folderPath);
 
-            Program.CustomAnsiConsole.MarkupLine("[green]Download finished[/]");
-            Program.CustomAnsiConsole.MarkupLine("Press any key to continue");
+            _console.MarkupLine("[green]Download finished[/]");
+            _console.MarkupLine("Press any key to continue");
             Console.ReadKey(true);
         }
 
-        private static async Task ProcessTracksInParallelAsync(JArray tracks, string audioBookId, string streamToken, string folderPath)
+        private async Task ProcessTracksInParallelAsync(JArray tracks, string audioBookId, string streamToken, string folderPath)
         {
             var conversionChannel = Channel.CreateBounded<DownloadedTrack>(new BoundedChannelOptions(10)
             {
@@ -132,7 +141,7 @@ namespace TokyBay.Scraper
                     await downloadSemaphore.WaitAsync();
                     try
                     {
-                        await Task.Delay(100 * trackNumber);
+                        await Task.Delay(10 * trackNumber);
 
                         var downloadedTrack = await DownloadTrackAsync(audioBookId, streamToken, src, trackTitle, folderPath, trackNumber, totalTracks);
                         if (downloadedTrack != null)
@@ -142,7 +151,7 @@ namespace TokyBay.Scraper
                             lock (lockObj)
                             {
                                 completedDownloads++;
-                                Program.CustomAnsiConsole.MarkupLine($"[green]Downloaded:[/] {completedDownloads}/{totalTracks} - {trackTitle}");
+                                _console.MarkupLine($"[green]Downloaded:[/] {completedDownloads}/{totalTracks} - {trackTitle}");
                             }
                         }
                     }
@@ -150,7 +159,7 @@ namespace TokyBay.Scraper
                     {
                         lock (lockObj)
                         {
-                            Program.CustomAnsiConsole.MarkupLine($"[red]Download error for {trackTitle}: {ex.Message}[/]");
+                            _console.MarkupLine($"[red]Download error for {trackTitle}: {ex.Message}[/]");
                         }
                     }
                     finally
@@ -174,14 +183,14 @@ namespace TokyBay.Scraper
                             lock (lockObj)
                             {
                                 completedConversions++;
-                                Program.CustomAnsiConsole.MarkupLine($"[cyan]Converted:[/] {completedConversions}/{totalTracks} - {downloadedTrack.TrackTitle}");
+                                _console.MarkupLine($"[cyan]Converted:[/] {completedConversions}/{totalTracks} - {downloadedTrack.TrackTitle}");
                             }
                         }
                         catch (Exception ex)
                         {
                             lock (lockObj)
                             {
-                                Program.CustomAnsiConsole.MarkupLine($"[red]Conversion error for {downloadedTrack.TrackTitle}: {ex.Message}[/]");
+                                _console.MarkupLine($"[red]Conversion error for {downloadedTrack.TrackTitle}: {ex.Message}[/]");
                             }
                         }
                     }
@@ -193,7 +202,7 @@ namespace TokyBay.Scraper
             await Task.WhenAll(conversionTasks);
         }
 
-        private static async Task<DownloadedTrack?> DownloadTrackAsync(string audioBookId, string streamToken, string trackSrc, string trackTitle, string folderPath, int trackNumber, int totalTracks)
+        private async Task<DownloadedTrack?> DownloadTrackAsync(string audioBookId, string streamToken, string trackSrc, string trackTitle, string folderPath, int trackNumber, int totalTracks)
         {
             try
             {
@@ -204,7 +213,7 @@ namespace TokyBay.Scraper
                 var basePath = trackSrc.Substring(0, trackSrc.LastIndexOf('/') + 1);
                 var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc.Substring(trackSrc.LastIndexOf('/') + 1));
 
-                var m3u8Url = TokybookUrl + AudioBaseApiPath + escapedTrackSrc;
+                var m3u8Url = TokybookBaseUrl + AudioBaseApiPath + escapedTrackSrc;
 
                 string? m3u8Content = null;
                 for (int retry = 0; retry < 3; retry++)
@@ -223,7 +232,7 @@ namespace TokyBay.Scraper
 
                 if (string.IsNullOrEmpty(m3u8Content))
                 {
-                    Program.CustomAnsiConsole.MarkupLine($"[red]Failed to download playlist for {trackTitle}[/]");
+                    _console.MarkupLine($"[red]Failed to download playlist for {trackTitle}[/]");
                     Directory.Delete(tempFolder, true);
                     return null;
                 }
@@ -231,7 +240,7 @@ namespace TokyBay.Scraper
                 var tsSegments = ParseTsSegments(m3u8Content);
                 if (tsSegments.Count == 0)
                 {
-                    Program.CustomAnsiConsole.MarkupLine($"[red]No segments found in playlist for {trackTitle}[/]");
+                    _console.MarkupLine($"[red]No segments found in playlist for {trackTitle}[/]");
                     Directory.Delete(tempFolder, true);
                     return null;
                 }
@@ -251,46 +260,12 @@ namespace TokyBay.Scraper
             }
             catch (Exception ex)
             {
-                Program.CustomAnsiConsole.MarkupLine($"[red]Error downloading track {trackTitle}: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error downloading track {trackTitle}: {ex.Message}[/]");
                 return null;
             }
         }
 
-        private static async Task ConvertTrackAsync(DownloadedTrack track)
-        {
-            try
-            {
-                if (SettingsPage.UserSettings.ConvertToMp3)
-                {
-                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".mp3");
-                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: true);
-                }
-
-                if (SettingsPage.UserSettings.ConvertToM4b)
-                {
-                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".m4b");
-                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: false);
-                }
-
-                if (Directory.Exists(track.TempFolder))
-                {
-                    try
-                    {
-                        Directory.Delete(track.TempFolder, true);
-                    }
-                    catch
-                    {
-                        Program.CustomAnsiConsole.MarkupLine($"[red]Error deleting temp folder: {track.TempFolder}[/]");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Conversion failed: {ex.Message}", ex);
-            }
-        }
-
-        private static async Task<string> DownloadM3u8PlaylistAsync(string audioBookId, string streamToken, string m3u8Url, string trackSrc)
+        private async Task<string> DownloadM3u8PlaylistAsync(string audioBookId, string streamToken, string m3u8Url, string trackSrc)
         {
             try
             {
@@ -304,7 +279,7 @@ namespace TokyBay.Scraper
             }
             catch (Exception ex)
             {
-                Program.CustomAnsiConsole.MarkupLine($"[red]Error downloading playlist {m3u8Url}: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error downloading playlist {m3u8Url}: {ex.Message}[/]");
                 return string.Empty;
             }
         }
@@ -326,7 +301,7 @@ namespace TokyBay.Scraper
             return segments;
         }
 
-        private static async Task DownloadTsSegmentsAsync(string audioBookId, string streamToken, string basePath, List<string> segments, string outputFolder, string trackTitle)
+        private async Task DownloadTsSegmentsAsync(string audioBookId, string streamToken, string basePath, List<string> segments, string outputFolder, string trackTitle)
         {
             var segmentSemaphore = new SemaphoreSlim(MaxSegmentsPerTrack);
             var downloadTasks = new List<Task>();
@@ -343,7 +318,7 @@ namespace TokyBay.Scraper
                     await segmentSemaphore.WaitAsync();
                     try
                     {
-                        var segmentUrl = TokybookUrl + AudioBaseApiPath + basePath + segment;
+                        var segmentUrl = TokybookBaseUrl + AudioBaseApiPath + basePath + segment;
                         var trackSrc = basePath + segment;
 
                         for (int retry = 0; retry < 3; retry++)
@@ -367,7 +342,9 @@ namespace TokyBay.Scraper
                             catch
                             {
                                 if (retry < 2)
+                                {
                                     await Task.Delay(500 * (retry + 1));
+                                }
                             }
                         }
                     }
@@ -386,10 +363,43 @@ namespace TokyBay.Scraper
             }
         }
 
-        private static async Task MergeTsSegmentsAsync(string tempFolder, List<string> segments, string outputFile, string trackTitle, bool isMp3Conversion)
+        private async Task ConvertTrackAsync(DownloadedTrack track)
         {
-            FFmpeg.SetExecutablesPath(SettingsPage.UserSettings.FFmpegDirectory);
+            try
+            {
+                if (_settings.ConvertToMp3)
+                {
+                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".mp3");
+                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: true);
+                }
 
+                if (_settings.ConvertToM4b)
+                {
+                    var outputFile = Path.Combine(track.FolderPath, track.SanitizedTitle + ".m4b");
+                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, outputFile, track.TrackTitle, isMp3Conversion: false);
+                }
+
+                if (Directory.Exists(track.TempFolder))
+                {
+                    try
+                    {
+                        Directory.Delete(track.TempFolder, true);
+                    }
+                    catch
+                    {
+                        _console.MarkupLine($"[red]Error deleting temp folder: {track.TempFolder}[/]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Conversion failed: {ex.Message}", ex);
+            }
+        }
+
+        private async Task MergeTsSegmentsAsync(string tempFolder, List<string> segments, string outputFile, string trackTitle, bool isMp3Conversion)
+        {
+            FFmpeg.SetExecutablesPath(_settings.FFmpegDirectory);
             var concatFile = Path.Combine(tempFolder, "concat.txt");
             var concatLines = new List<string>();
 
@@ -425,7 +435,7 @@ namespace TokyBay.Scraper
             await conversion.Start();
         }
 
-        private static async Task<JObject?> GetPostDetailssync(string dynamicSlugId, JObject userIdentity)
+        private async Task<JObject?> GetPostDetailssync(string dynamicSlugId, JObject userIdentity)
         {
             try
             {
@@ -436,11 +446,11 @@ namespace TokyBay.Scraper
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                var response = await HttpUtil.PostAsync(TokybookUrl + PostDetailsApiPath, content);
+                var response = await _httpUtil.PostAsync(TokybookBaseUrl + PostDetailsApiPath, content);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Program.CustomAnsiConsole.MarkupLine($"[red]Post details request failed: {response.StatusCode}[/]");
+                    _console.MarkupLine($"[red]Post details request failed: {response.StatusCode}[/]");
                     return null;
                 }
 
@@ -449,12 +459,12 @@ namespace TokyBay.Scraper
             }
             catch (Exception ex)
             {
-                Program.CustomAnsiConsole.MarkupLine($"[red]Error getting post details: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error getting post details: {ex.Message}[/]");
                 return null;
             }
         }
 
-        private static async Task<JObject?> GetPlaylistAsync(string audioBookId, string postDetailToken, string dynamicSlugId, JObject userIdentity)
+        private async Task<JObject?> GetPlaylistAsync(string audioBookId, string postDetailToken, string dynamicSlugId, JObject userIdentity)
         {
             try
             {
@@ -471,11 +481,11 @@ namespace TokyBay.Scraper
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                var response = await HttpUtil.PostAsync(TokybookUrl + PlaylistApiPath, content);
+                var response = await _httpUtil.PostAsync(TokybookBaseUrl + PlaylistApiPath, content);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Program.CustomAnsiConsole.MarkupLine($"[red]Playlist request failed: {response.StatusCode}[/]");
+                    _console.MarkupLine($"[red]Playlist request failed: {response.StatusCode}[/]");
                     return null;
                 }
 
@@ -484,9 +494,21 @@ namespace TokyBay.Scraper
             }
             catch (Exception ex)
             {
-                Program.CustomAnsiConsole.MarkupLine($"[red]Error getting playlist: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error getting playlist: {ex.Message}[/]");
                 return null;
             }
+        }
+
+        private async Task<HttpResponseMessage> GetTokybookTracksAsync(string url, string audioBookId, string streamToken, string trackSrc)
+        {
+            var headers = new Dictionary<string, string>()
+            {
+                { "x-audiobook-id", audioBookId },
+                { "x-stream-token", streamToken },
+                { "x-track-src", trackSrc },
+            };
+
+            return await _httpUtil.GetAsync(url, headers);
         }
 
         private static string ExtractDynamicSlugId(string url)
@@ -504,18 +526,6 @@ namespace TokyBay.Scraper
         private static string SanitizeName(string fileName)
         {
             return Regex.Replace(fileName, "[^A-Za-z0-9]+", "_");
-        }
-
-        private static async Task<HttpResponseMessage> GetTokybookTracksAsync(string url, string audioBookId, string streamToken, string trackSrc)
-        {
-            var headers = new Dictionary<string, string>()
-            {
-                { "x-audiobook-id", audioBookId },
-                { "x-stream-token", streamToken },
-                { "x-track-src", trackSrc },
-            };
-
-            return await HttpUtil.GetAsync(url, headers);
         }
     }
 }

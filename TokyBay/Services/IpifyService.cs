@@ -1,17 +1,26 @@
 ﻿using Newtonsoft.Json.Linq;
 using Spectre.Console;
 
-namespace TokyBay
+namespace TokyBay.Services
 {
-    public static class IpifyHandler
+    public class IpifyService : IIpifyService
     {
         private const string IpifyUrl = "https://api.ipify.org?format=json";
 
-        public static async Task<JObject> GetUserIdentityAsync()
+        private readonly IHttpService _httpUtil;
+        private readonly IAnsiConsole _console;
+
+        public IpifyService(IHttpService httpUtil, IAnsiConsole console)
+        {
+            _httpUtil = httpUtil;
+            _console = console;
+        }
+
+        public async Task<JObject> GetUserIdentityAsync()
         {
             try
             {
-                var response = await HttpUtil.GetAsync(IpifyUrl);
+                var response = await _httpUtil.GetAsync(IpifyUrl);
                 var json = await response.Content.ReadAsStringAsync();
                 var data = JObject.Parse(json);
 
@@ -24,7 +33,7 @@ namespace TokyBay
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]Error getting IP: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error getting IP: {ex.Message}[/]");
                 return new JObject
                 {
                     ["ipAddress"] = "0.0.0.0",

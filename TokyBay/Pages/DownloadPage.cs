@@ -1,21 +1,37 @@
 ﻿using Spectre.Console;
+using TokyBay.Models;
+using TokyBay.Services;
 
 namespace TokyBay.Pages
 {
-    public class DownloadPage
+    public class DownloadPage(
+        IAnsiConsole console,
+        IPageService pageService,
+        ISettingsService settingsService,
+        Scraper.Tokybook tokybookScraper,
+        Scraper.ZAudiobooks zaudiobooksScraper)
     {
-        public static async Task ShowAsync()
+        private readonly IAnsiConsole _console = console;
+        private readonly IPageService _pageService = pageService;
+        private readonly UserSettings _settings = settingsService.GetSettings();
+        private readonly Scraper.Tokybook _tokybookScraper = tokybookScraper;
+        private readonly Scraper.ZAudiobooks _zaudiobooksScraper = zaudiobooksScraper;
+
+        public async Task ShowAsync()
         {
-            Program.CustomAnsiConsole.Clear();
-            MenuHandler.ShowHeader();
-            Program.CustomAnsiConsole.MarkupLine($"[grey]Supported audiobook sites:[/]");
-            Program.CustomAnsiConsole.MarkupLine($" - https://tokybook.com/");
-            Program.CustomAnsiConsole.WriteLine();
-            Program.CustomAnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsPage.UserSettings.DownloadPath}");
+            _console.Clear();
+            _pageService.DisplayHeader();
+
+            _console.MarkupLine($"[grey]Supported audiobook sites:[/]");
+            _console.MarkupLine($" - https://tokybook.com/");
+            _console.MarkupLine($" - https://zaudiobooks.com/");
+            _console.WriteLine();
+            _console.MarkupLine($"[grey]Audiobook will be saved in:[/] {_settings.DownloadPath}");
+
             while (true)
             {
-                Program.CustomAnsiConsole.WriteLine();
-                var (url, cancelled) = await MenuHandler.DisplayAskAsync<string>("Enter URL:");
+                _console.WriteLine();
+                var (url, cancelled) = await _pageService.DisplayAskAsync<string>("Enter URL:");
                 if (cancelled)
                 {
                     return;
@@ -23,11 +39,14 @@ namespace TokyBay.Pages
 
                 switch (url)
                 {
-                    case { } when url.StartsWith("https://tokybook.com/"):
-                        await Scraper.Tokybook.DownloadBookAsync(url);
-                        break;
+                    case { } when url.Contains("tokybook.com"):
+                        await _tokybookScraper.DownloadBookAsync(url);
+                        return;
+                    case { } when url.Contains("zaudiobooks.com"):
+                        await _zaudiobooksScraper.DownloadBookAsync(url);
+                        return;
                     default:
-                        Program.CustomAnsiConsole.MarkupLine("[red]Invalid URL! Try again.[/]");
+                        _console.MarkupLine("[red]Invalid URL! Try again.[/]");
                         continue;
                 }
             }
