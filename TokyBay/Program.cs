@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 using TokyBay;
 using TokyBay.Pages;
-using TokyBay.Scraper;
 using TokyBay.Services;
 
 class Program
@@ -36,13 +35,18 @@ class Program
         services.AddSingleton<EscapeCancellableConsole>(sp => new EscapeCancellableConsole(AnsiConsole.Console));
         services.AddSingleton<IAnsiConsole>(sp => sp.GetRequiredService<EscapeCancellableConsole>());
 
-        services.AddSingleton<IDownloaderService, DownloaderService>();
         services.AddSingleton<IIpifyService, IpifyService>();
         services.AddSingleton<IPageService, PageService>();
         services.AddSingleton<ISettingsService, SettingsService>();
 
-        services.AddTransient<Tokybook>();
-        services.AddTransient<ZAudiobooks>();
+        services.AddScraperServices(config =>
+        {
+            config.MaxParallelDownloads = 5;
+            config.MaxParallelConversions = 3;
+            config.MaxSegmentsPerTrack = 8;
+            config.RetryAttempts = 3;
+            config.RetryDelayMs = 1000;
+        });
 
         services.AddTransient<MainPage>();
         services.AddTransient<SettingsPage>();

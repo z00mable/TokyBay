@@ -10,7 +10,7 @@ namespace TokyBay.Pages
         IPageService pageService,
         IHttpService httpUtil,
         IIpifyService ipifyService,
-        Scraper.Tokybook tokybookScraper)
+        DownloadService downloadService)
     {
         private const string TokybookUrl = "https://tokybook.com";
         private const string SearchApiPath = "/api/v1/search";
@@ -20,7 +20,7 @@ namespace TokyBay.Pages
         private readonly IPageService _pageService = pageService;
         private readonly IHttpService _httpUtil = httpUtil;
         private readonly IIpifyService _ipifyService = ipifyService;
-        private readonly Scraper.Tokybook _tokybookScraper = tokybookScraper;
+        private readonly DownloadService _downloadService = downloadService;
 
         public async Task ShowAsync()
         {
@@ -112,7 +112,9 @@ namespace TokyBay.Pages
                     var selectedIndex = allBookTitles.IndexOf(selection);
                     if (selectedIndex >= 0)
                     {
-                        await _tokybookScraper.DownloadBookAsync(TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex]);
+                        var bookUrl = TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex];
+
+                        await _downloadService.DownloadAsync(bookUrl);
                         return;
                     }
                 }
