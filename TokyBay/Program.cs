@@ -1,35 +1,58 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 using TokyBay;
 using TokyBay.Pages;
+using TokyBay.Services;
 
-static class Program
+class Program
 {
-    public static EscapeCancellableConsole CustomAnsiConsole = new EscapeCancellableConsole(AnsiConsole.Console);
-
     static async Task Main(string[] args)
     {
-        IConfiguration config = new ConfigurationBuilder()
+        var services = new ServiceCollection();
+        ConfigureServices(services);
+
+        var serviceProvider = services.BuildServiceProvider();
+
+        var app = serviceProvider.GetRequiredService<Application>();
+        await app.RunAsync(args);
+    }
+
+    private static void ConfigureServices(IServiceCollection services)
+    {
+        var config = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
             .Build();
 
-        await SettingsPage.SetSettingsAsync(config);
+        services.AddSingleton<IConfiguration>(config);
 
-        for (int i = 0; i < args.Length; i++)
+        services.AddHttpClient<IHttpService, HttpService>(client =>
         {
-            if ((args[i] == "-d" || args[i] == "--directory") && i + 1 < args.Length)
-            {
-                if (args[i + 1] != SettingsPage.UserSettings.DownloadPath)
-                {
-                    SettingsPage.UserSettings.DownloadPath = args[i + 1];
-                    await SettingsPage.PersistSettingsAsync();
-                }
-            }
-        }
+            client.Timeout = TimeSpan.FromMinutes(10);
+        });
 
-        await SettingsPage.DownloadFFmpegAsync();
+        services.AddSingleton<EscapeCancellableConsole>(sp => new EscapeCancellableConsole(AnsiConsole.Console));
+        services.AddSingleton<IAnsiConsole>(sp => sp.GetRequiredService<EscapeCancellableConsole>());
 
-        await MainPage.ShowAsync();
+        services.AddSingleton<IIpifyService, IpifyService>();
+        services.AddSingleton<IPageService, PageService>();
+        services.AddSingleton<ISettingsService, SettingsService>();
+
+        services.AddScraperServices(config =>
+        {
+            config.MaxParallelDownloads = 5;
+            config.MaxParallelConversions = 3;
+            config.MaxSegmentsPerTrack = 8;
+            config.RetryAttempts = 3;
+            config.RetryDelayMs = 1000;
+        });
+
+        services.AddTransient<MainPage>();
+        services.AddTransient<SettingsPage>();
+        services.AddTransient<SearchTokybookPage>();
+        services.AddTransient<DownloadPage>();
+
+        services.AddSingleton<Application>();
     }
 }

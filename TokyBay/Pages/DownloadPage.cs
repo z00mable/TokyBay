@@ -1,35 +1,86 @@
 ﻿using Spectre.Console;
+using TokyBay.Models;
+using TokyBay.Services;
 
 namespace TokyBay.Pages
 {
-    public class DownloadPage
+    public class DownloadPage(
+        IAnsiConsole console,
+        IPageService pageService,
+        ISettingsService settingsService,
+        DownloadService downloadService)
     {
-        public static async Task ShowAsync()
+        private readonly IAnsiConsole _console = console;
+        private readonly IPageService _pageService = pageService;
+        private readonly UserSettings _settings = settingsService.GetSettings();
+        private readonly DownloadService _downloadService = downloadService;
+
+        public async Task ShowAsync()
         {
-            Program.CustomAnsiConsole.Clear();
-            MenuHandler.ShowHeader();
-            Program.CustomAnsiConsole.MarkupLine($"[grey]Supported audiobook sites:[/]");
-            Program.CustomAnsiConsole.MarkupLine($" - https://tokybook.com/");
-            Program.CustomAnsiConsole.WriteLine();
-            Program.CustomAnsiConsole.MarkupLine($"[grey]Audiobook will be saved in:[/] {SettingsPage.UserSettings.DownloadPath}");
+            _console.Clear();
+            _pageService.DisplayHeader();
+
+            DisplaySupportedSites();
+            DisplayDownloadPath();
+
             while (true)
             {
-                Program.CustomAnsiConsole.WriteLine();
-                var (url, cancelled) = await MenuHandler.DisplayAskAsync<string>("Enter URL:");
+                _console.WriteLine();
+                var (url, cancelled) = await _pageService.DisplayAskAsync<string>("Enter URL:");
+
                 if (cancelled)
                 {
                     return;
                 }
 
-                switch (url)
+                if (string.IsNullOrWhiteSpace(url))
                 {
-                    case { } when url.StartsWith("https://tokybook.com/"):
-                        await Scraper.Tokybook.DownloadBookAsync(url);
-                        break;
-                    default:
-                        Program.CustomAnsiConsole.MarkupLine("[red]Invalid URL! Try again.[/]");
-                        continue;
+                    _console.MarkupLine("[red]URL cannot be empty! Try again.[/]");
+                    continue;
                 }
+
+                await ProcessDownloadAsync(url);
+                return;
+            }
+        }
+
+        private void DisplaySupportedSites()
+        {
+            _console.MarkupLine("[grey]Supported audiobook sites:[/]");
+
+            var supportedDomains = _downloadService.GetSupportedDomains();
+            foreach (var domain in supportedDomains)
+            {
+                _console.MarkupLine($" - https://{domain}/");
+            }
+
+            _console.WriteLine();
+        }
+
+        private void DisplayDownloadPath()
+        {
+            _console.MarkupLine($"[grey]Audiobook will be saved in:[/] {_settings.DownloadPath}");
+        }
+
+        private async Task ProcessDownloadAsync(string url)
+        {
+            try
+            {
+                await _downloadService.DownloadAsync(url);
+            }
+            catch (NotSupportedException ex)
+            {
+                _console.MarkupLine($"[red]{ex.Message}[/]");
+                _console.WriteLine();
+                _console.MarkupLine("[yellow]Please use one of the supported sites listed above.[/]");
+                _console.MarkupLine("Press any key to continue");
+                Console.ReadKey(true);
+            }
+            catch (Exception ex)
+            {
+                _console.MarkupLine($"[red]Download failed: {ex.Message}[/]");
+                _console.MarkupLine("Press any key to continue");
+                Console.ReadKey(true);
             }
         }
     }

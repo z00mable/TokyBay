@@ -1,55 +1,57 @@
 ﻿using Spectre.Console;
 
-namespace TokyBay.Pages
+namespace TokyBay.Services
 {
-    public static class MenuHandler
+    public class PageService(EscapeCancellableConsole console) : IPageService
     {
-        public static void ShowHeader()
+        private readonly EscapeCancellableConsole _console = console;
+
+        public void DisplayHeader()
         {
-            Program.CustomAnsiConsole.Write(
+            _console.Write(
                 new FigletText(FigletFont.Load("Bulbhead.flf"), "TokyBay")
                     .LeftJustified()
                     .Color(Color.Red));
-            Program.CustomAnsiConsole.WriteLine();
+            _console.WriteLine();
         }
 
-        public static async Task<string?> DisplayPromptAsync(string prompt, string[] options)
+        public async Task<(string? value, bool cancelled)> DisplayPromptAsync(string prompt, string[] options)
         {
-            Program.CustomAnsiConsole.Clear();
-            ShowHeader();
+            _console.Clear();
+            DisplayHeader();
             return await DisplayPartialPromptAsync(prompt, options);
         }
 
-        public static async Task<string?> DisplayPartialPromptAsync(string prompt, string[] options)
+        public async Task<(string? value, bool cancelled)> DisplayPartialPromptAsync(string prompt, string[] options)
         {
             try
             {
-                return await Program.CustomAnsiConsole.PromptAsync(
+                var result = await _console.PromptAsync(
                     new SelectionPrompt<string>()
                         .Title($"[grey]{prompt}[/]")
                         .PageSize(20)
                         .MoreChoicesText("[grey](Move up and down to reveal more titles)[/]")
                         .AddChoices(options)
                 );
-            }
-            catch (OperationCanceledException)
-            {
-                Program.CustomAnsiConsole.ResetCancellationToken();
-                return null;
-            }
-            
-        }
-
-        public static async Task<(T? value, bool cancelled)> DisplayAskAsync<T>(string prompt)
-        {
-            try
-            {
-                var result = await Program.CustomAnsiConsole.AskAsync<T>(prompt);
                 return (result, false);
             }
             catch (OperationCanceledException)
             {
-                Program.CustomAnsiConsole.ResetCancellationToken();
+                _console.ResetCancellationToken();
+                return (default, true);
+            }
+        }
+
+        public async Task<(T? value, bool cancelled)> DisplayAskAsync<T>(string prompt)
+        {
+            try
+            {
+                var result = await _console.AskAsync<T>(prompt);
+                return (result, false);
+            }
+            catch (OperationCanceledException)
+            {
+                _console.ResetCancellationToken();
                 return (default, true);
             }
         }
