@@ -19,6 +19,7 @@ namespace TokyBay
 
             services.AddTransient<IScraperStrategy, TokybookStrategy>();
             services.AddTransient<IScraperStrategy, ZAudiobooksStrategy>();
+            services.AddTransient<IScraperStrategy, GoldenAudiobookStrategy>();
 
             services.AddSingleton<ScraperFactory>();
             services.AddSingleton<DownloadService>();

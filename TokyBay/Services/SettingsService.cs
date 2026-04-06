@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System.Runtime.InteropServices;
-using System.Text.Json;
+using Newtonsoft.Json;
 using TokyBay.Models;
 using Xabe.FFmpeg.Downloader;
 
@@ -19,11 +19,9 @@ namespace TokyBay.Services
             config.GetSection("UserSettings").Bind(_userSettings);
             if (string.IsNullOrEmpty(_userSettings.DownloadPath))
             {
-                var windowsMusicFolder = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? "\\Music"
-                    : string.Empty;
-                var userPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + windowsMusicFolder;
-                _userSettings.DownloadPath = userPath;
+                _userSettings.DownloadPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic))
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 await PersistSettingsAsync();
             }
         }
@@ -36,13 +34,13 @@ namespace TokyBay.Services
 
         public async Task EnsureFFmpegAsync()
         {
+            if (string.IsNullOrWhiteSpace(_userSettings.FFmpegDirectory))
+            {
+                _userSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
+            }
+
             if (ExistsFFmpegFile(_userSettings.FFmpegDirectory))
             {
-                if (string.IsNullOrWhiteSpace(_userSettings.FFmpegDirectory))
-                {
-                    _userSettings.FFmpegDirectory = Directory.GetCurrentDirectory();
-                }
-
                 return;
             }
 
@@ -61,9 +59,9 @@ namespace TokyBay.Services
 
         public async Task PersistSettingsAsync()
         {
-            var userSettings = JsonSerializer.Serialize(
+            var userSettings = JsonConvert.SerializeObject(
                 new { UserSettings = _userSettings },
-                new JsonSerializerOptions { WriteIndented = true });
+                Formatting.Indented);
             await File.WriteAllTextAsync("appsettings.json", userSettings);
         }
 
@@ -102,8 +100,7 @@ namespace TokyBay.Services
             var ffmpegExecutableName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? "ffmpeg.exe"
                 : "ffmpeg";
-            var ffmpegExecutablePath = Path.Combine(path, ffmpegExecutableName);
-            return File.Exists(ffmpegExecutablePath);
+            return File.Exists(Path.Combine(path, ffmpegExecutableName));
         }
     }
 }

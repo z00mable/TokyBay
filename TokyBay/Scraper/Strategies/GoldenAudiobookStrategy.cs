@@ -7,25 +7,26 @@ using TokyBay.Services;
 
 namespace TokyBay.Scraper.Strategies
 {
-    public class ZAudiobooksStrategy(
+    public partial class GoldenAudiobookStrategy(
         IAnsiConsole console,
         IHttpService httpUtil,
         ISettingsService settingsService,
         ScraperConfig? config = null) : BaseScraperStrategy(console, httpUtil, settingsService, config)
     {
-        private const string BaseUrl = "https://files01.freeaudiobooks.top/audio/";
+        // Matches <source> tags with type="audio/mpeg" in either attribute order
+        [GeneratedRegex(@"<source\b[^>]*type=""audio/mpeg""[^>]*>", RegexOptions.IgnoreCase)]
+        private static partial Regex AudioSourceTagRegex();
+
+        [GeneratedRegex(@"\bsrc=""([^""]+)""")]
+        private static partial Regex SrcAttributeRegex();
 
         public override bool CanHandle(string bookUrl)
         {
-            return bookUrl.Contains("freeaudiobooks.top", StringComparison.OrdinalIgnoreCase) ||
-                   bookUrl.Contains("zaudiobooks", StringComparison.OrdinalIgnoreCase);
+            return bookUrl.Contains("goldenaudiobook.net", StringComparison.OrdinalIgnoreCase);
         }
 
         public override async Task DownloadBookAsync(string bookUrl)
         {
-            _console.MarkupLine("[yellow]Warning: freeaudiobooks.top and zaudiobooks.com are currently experiencing downtime and may be unreachable.[/]");
-            _console.WriteLine();
-
             var metadata = await FetchMetadataAsync(bookUrl);
             if (metadata == null || metadata.ChapterUrls.Count == 0)
             {
@@ -54,7 +55,7 @@ namespace TokyBay.Scraper.Strategies
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
-                    ctx.Status("Getting title and chapters...");
+                    ctx.Status("Fetching page...");
                     metadata = await GetChapterUrlsAsync(bookUrl);
                 });
 
@@ -69,46 +70,17 @@ namespace TokyBay.Scraper.Strategies
                 response.EnsureSuccessStatusCode();
 
                 var html = await response.Content.ReadAsStringAsync();
-                var lines = html.Split('\n');
-                var startIndex = Array.FindIndex(lines, line => line.Contains("tracks = ["));
 
-                if (startIndex == -1)
+                var chapterUrls = AudioSourceTagRegex()
+                    .Matches(html)
+                    .Select(m => SrcAttributeRegex().Match(m.Value))
+                    .Where(m => m.Success)
+                    .Select(m => m.Groups[1].Value)
+                    .ToList();
+
+                if (chapterUrls.Count == 0)
                 {
                     return null;
-                }
-
-                var chapterUrls = new List<string>();
-                bool skipThisTrack = false;
-
-                for (int i = startIndex; i < lines.Length; i++)
-                {
-                    var line = lines[i].Trim();
-
-                    if (line.Contains("\"name\"") && line.Contains("welcome"))
-                    {
-                        skipThisTrack = true;
-                    }
-
-                    if (line.Contains("\"chapter_link_dropbox\""))
-                    {
-                        if (skipThisTrack)
-                        {
-                            skipThisTrack = false;
-                            continue;
-                        }
-
-                        var url = ExtractUrl(line);
-                        if (!string.IsNullOrEmpty(url))
-                        {
-                            var fullUrl = url.StartsWith("http") ? url : BaseUrl + url;
-                            chapterUrls.Add(fullUrl);
-                        }
-                    }
-
-                    if (line.Contains("],"))
-                    {
-                        break;
-                    }
                 }
 
                 return new SimpleAudiobookMetadata
@@ -122,15 +94,6 @@ namespace TokyBay.Scraper.Strategies
                 _console.MarkupLine($"[red]Error fetching chapter URLs: {ex.Message}[/]");
                 return null;
             }
-        }
-
-        private static string ExtractUrl(string line)
-        {
-            var startQuote = line.IndexOf(':') + 1;
-            return line[startQuote..]
-                .Trim()
-                .Trim('"', ',', ' ')
-                .Replace("\\", "");
         }
     }
 }

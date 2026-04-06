@@ -74,13 +74,13 @@ namespace TokyBay.Pages
                 _console.WriteLine();
                 _console.MarkupLine("[yellow]Please use one of the supported sites listed above.[/]");
                 _console.MarkupLine("Press any key to continue");
-                Console.ReadKey(true);
+                _console.Input.ReadKey(true);
             }
             catch (Exception ex)
             {
                 _console.MarkupLine($"[red]Download failed: {ex.Message}[/]");
                 _console.MarkupLine("Press any key to continue");
-                Console.ReadKey(true);
+                _console.Input.ReadKey(true);
             }
         }
     }
