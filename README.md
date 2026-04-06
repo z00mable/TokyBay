@@ -1,7 +1,6 @@
 # TokyBay
 
-Search & download audiobooks from [Tokybook.com](https://tokybook.com) and convert it automatically to audiobook friendly M4B format or good old MP3 format.
-No installation is needed. Just download the latest release for your system at https://github.com/z00mable/TokyBay/releases/latest.
+Search & download audiobooks from multiple sites and convert them automatically to the audiobook-friendly M4B format or good old MP3.
 
 > [!Note]
 > This project is intended for educational purposes only. Please respect copyright laws and the terms of service of the respective websites.
@@ -14,94 +13,149 @@ No installation is needed. Just download the latest release for your system at h
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 ![Issues](https://img.shields.io/github/issues/z00mable/TokyBay?color=informational)
 
-## Supported Sites
+> [!Important]
+> Tokybook.com is currently undergoing a major platform overhaul and the website is temporarily closed. However, **TokyBay continues to work** — search and downloads still function via the Tokybook API.
 
-* [tokybook.com](https://tokybook.com)
+## Table of Contents
 
-## Download
+- [Quick Start (No technical knowledge required)](#quick-start-no-technical-knowledge-required)
+- [Supported Sites](#supported-sites)
+- [Features](#features)
+- [Usage](#usage)
+- [For Developers](#for-developers)
+- [License](#license)
+- [Credits](#credits)
 
-Download the latest release at https://github.com/z00mable/TokyBay/releases/latest
+![TokyBay Demo](.github/assets/TokyBay.gif)
 
-## Features
-1. **Search book**: Search and find audiobook from Tokybook.com
-2. **Download from URL**: Directly download an audiobook using its URL.
-3. **Convert to superior M4B format**: Convert downloaded files automatically to M4B audio book format.
-4. **Convert to MP3 format**: Convert downloaded files automatically to MP3 format.
-5. **User settings**: Conveniently stored and easily changed in TokyBay's in-app settings.
+---
 
-### Search Functionality
-- Enter your search query when prompted.
-- Select the desired book from the search results.
-- The program will automatically start downloading all audiobook chapters.
+## Quick Start (No technical knowledge required)
 
-### Direct URL Download
-- Enter the URL of the audiobook when prompted.
-- The program will automatically start downloading the audiobook chapters.
+No programming knowledge needed. No installation. Just download and run.
 
-### Settings
-- Change download path.
-- Activate/deactivate automatic M4B conversion after download.
-- Activate/deactivate automatic MP3 conversion after download.
+### Step 1 — Download TokyBay
+
+Go to the **[latest release page](https://github.com/z00mable/TokyBay/releases/latest)** and download the file for your operating system:
+
+| Your system | File to download |
+|-------------|-----------------|
+| Windows | `tokybay-win-x64.zip` |
+| Linux (64-bit) | `tokybay-linux-x64.zip` |
+| Linux (ARM, e.g. Raspberry Pi) | `tokybay-linux-arm64.zip` |
+
+### Step 2 — Extract the ZIP
+
+Extract the downloaded ZIP file to any folder you like (e.g. your Desktop or Downloads folder).
+
+### Step 3 — Run TokyBay
+
+- **Windows:** Double-click `tokybay.exe` — or right-click it and select *Open in Terminal*
+- **Linux:** Open a terminal in the extracted folder and run `./tokybay`
+
+That's it. TokyBay will guide you through the rest.
 
 > [!Note]
->
-> - On first start, TokyBoy will automatically download [FFmpeg](https://github.com/FFmpeg/FFmpeg) to current directory. Can be changed in in-app settings later.
->
+> On first start, TokyBay will automatically download [FFmpeg](https://github.com/FFmpeg/FFmpeg) — the tool it uses to convert audio files. This happens once and requires an internet connection.
+
+---
+
+## Supported Sites
+
+| Site | Status |
+|------|--------|
+| [tokybook.com](https://tokybook.com) | Website temporarily offline, API operational |
+| [zaudiobooks.com](https://zaudiobooks.com) / [freeaudiobooks.top](https://freeaudiobooks.top) | Working |
+| [goldenaudiobook.net](https://goldenaudiobook.net) | Working |
+
+## Features
+
+1. **Search**: Search and find audiobooks by title
+2. **Direct URL download**: Download any audiobook directly by URL
+3. **M4B conversion**: Automatically convert to the M4B audiobook format after download
+4. **MP3 conversion**: Automatically convert to MP3 format after download
+5. **Multi-site support**: Works with Tokybook, ZAudiobooks/FreeAudiobooks, and GoldenAudiobook
+6. **Settings**: Persistent in-app settings — download path, conversion preferences
 
 ## Usage
 
-- Start TokyBay
-  
-    ```shell
-    tokybay
-    ```
+### Search
 
-- If TokyBay is invoked with `-d` or `--directory` as arguments it will download files to a custom directory
+1. Select **Search** from the main menu
+2. Enter your search query
+3. Select the desired book from the results
+4. TokyBay automatically downloads and converts all chapters
 
-    ```shell
-    tokybay -d "C:\Users\User\Music"
-    ```
+### Direct URL Download
+
+1. Select **Download from URL** from the main menu
+2. Paste the audiobook URL (any supported site)
+3. TokyBay automatically downloads and converts all chapters
+
+### Settings
+
+- Change the download path
+- Toggle automatic M4B conversion
+- Toggle automatic MP3 conversion
+- Change the FFmpeg binary path
 
 > [!Tip]
->
-> - If `-d` or `--directory` is not invoked, TokyBay will download audiobooks to current directory. But directory can be change inside TokyBay's in-app settings.
->
+> By default, TokyBay downloads to the folder it is run from. You can change this inside the app's settings, or pass a custom path via `-d "C:\Users\User\Music"` when launching from the terminal.
 
-## Installation
-### Clone the repository
-Open terminal and go to desired clone directory, then run:
+---
+
+## For Developers
+
+<details>
+<summary>Build from source</summary>
+
+### Prerequisites
+
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+
+### Clone and run
+
 ```sh
-git clone https://https://github.com/z00mable/TokyBay.git
+git clone https://github.com/z00mable/TokyBay.git
 cd TokyBay
-```
-
-### Install dependencies
-```sh
 dotnet restore
-```
-
-### Build the project
-```sh
 dotnet build
+dotnet run --project TokyBay -- -d "C:\Users\User\Music"
 ```
 
-### Run the application
+### Publish self-contained binaries
+
 ```sh
-dotnet run -d "C:\Users\User\Music"
+dotnet publish -c Release -r win-x64 --self-contained
+dotnet publish -c Release -r linux-x64 --self-contained
+dotnet publish -c Release -r linux-arm64 --self-contained
 ```
+
+### Adding a new site
+
+1. Create a new class in `TokyBay/Scraper/Strategies/` extending `BaseScraperStrategy`
+2. Implement `CanHandle(string url)` — URL-based detection
+3. Implement `DownloadBookAsync(string url)` — fetch metadata, then call `ProcessTracksInParallelAsync`
+4. Register it in `ScraperServiceExtensions.cs`:
+   ```csharp
+   services.AddTransient<IScraperStrategy, YourNewStrategy>();
+   ```
+
+</details>
+
+---
 
 ## License
 
-FFmpeg codebase is mainly LGPL-licensed with optional components licensed under GPL. Please refer to the LICENSE file for detailed information.
+FFmpeg is mainly LGPL-licensed with optional components licensed under GPL. See the [FFmpeg license](https://ffmpeg.org/legal.html) for details.
 
-Xabe.FFmpeg is licensed under [Attribution-NonCommercial-ShareAlike 3.0 Unported (CC BY-NC-SA 3.0)](https://creativecommons.org/licenses/by-nc-sa/3.0/) for non commercial use. If you want use Xabe.FFmpeg in commercial project visit our website - [Xabe.FFmpeg](https://ffmpeg.xabe.net/license.html)
+Xabe.FFmpeg is licensed under [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/) for non-commercial use. For commercial use, see [Xabe.FFmpeg licensing](https://ffmpeg.xabe.net/license.html).
 
 ## Credits
 
-To [Tokybook.com](https://tokybook.com) for their awesomness.
+Inspired by:
 
-Tokybay is inspired by projects from
-
-- Adrian Castro https://github.com/castdrian/audiosnatch
-- Rahatul Ghazi https://github.com/rahaaatul/TokySnatcher
-- nazDridoy https://github.com/nazdridoy/audiobooksnatcher
+- [castdrian/audiosnatch](https://github.com/castdrian/audiosnatch) — Adrian Castro
+- [rahaaatul/TokySnatcher](https://github.com/rahaaatul/TokySnatcher) — Rahatul Ghazi
+- [nazdridoy/audiobooksnatcher](https://github.com/nazdridoy/audiobooksnatcher) — nazDridoy
+- [aviiciii/audiobook-downloader](https://github.com/aviiciii/audiobook-downloader) — aviiciii

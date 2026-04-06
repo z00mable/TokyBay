@@ -31,6 +31,7 @@ namespace TokyBay.Services
             return new[]
             {
                 "tokybook.com",
+                "goldenaudiobook.net",
                 "freeaudiobooks.top",
                 "zaudiobooks.com"
             };

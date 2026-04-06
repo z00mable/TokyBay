@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Linq;
 using Spectre.Console;
 using System.Text;
 using TokyBay.Services;
@@ -41,8 +41,7 @@ namespace TokyBay.Pages
             var offset = 0;
             var limit = 12;
             var hasMoreHits = false;
-            var allBookTitles = new List<string>();
-            var allDynamicSlugIds = new List<string>();
+            var allBooks = new List<(string Title, string SlugId)>();
 
             const string loadMoreSelection = "[green]Load more[/]";
             const string exitSelection = "[red]Exit[/]";
@@ -68,32 +67,25 @@ namespace TokyBay.Pages
                                 var title = item["title"]?.ToString();
                                 var dynamicSlugId = item["dynamicSlugId"]?.ToString();
 
-                                if (!string.IsNullOrEmpty(title))
+                                if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(dynamicSlugId))
                                 {
-                                    allBookTitles.Add(title);
-                                }
-
-                                if (!string.IsNullOrEmpty(dynamicSlugId))
-                                {
-                                    allDynamicSlugIds.Add(dynamicSlugId);
+                                    allBooks.Add((title, dynamicSlugId));
                                 }
                             }
                         }
 
                         var totalHitsString = searchResultsResponse["totalHits"]?.ToString() ?? string.Empty;
-                        var parseSucceeded = int.TryParse(totalHitsString, out int totalHits);
-                        if (parseSucceeded && totalHits > offset + limit)
+                        if (int.TryParse(totalHitsString, out int totalHits) && totalHits > offset + limit)
                         {
                             hasMoreHits = true;
                         }
                     });
 
-                var menuOptions = new List<string>(allBookTitles);
+                var menuOptions = allBooks.Select(b => b.Title).ToList();
                 if (hasMoreHits)
                 {
                     menuOptions.Add(loadMoreSelection);
                 }
-
                 menuOptions.Add(exitSelection);
 
                 var (selection, cancelled) = await _pageService.DisplayPromptAsync("Select a book:", menuOptions.ToArray());
@@ -109,11 +101,10 @@ namespace TokyBay.Pages
                 }
                 else
                 {
-                    var selectedIndex = allBookTitles.IndexOf(selection);
-                    if (selectedIndex >= 0)
+                    var selectedBook = allBooks.FirstOrDefault(b => b.Title == selection);
+                    if (selectedBook != default)
                     {
-                        var bookUrl = TokybookUrl + PostDetailsApiPath + allDynamicSlugIds[selectedIndex];
-
+                        var bookUrl = TokybookUrl + PostDetailsApiPath + selectedBook.SlugId;
                         await _downloadService.DownloadAsync(bookUrl);
                         return;
                     }

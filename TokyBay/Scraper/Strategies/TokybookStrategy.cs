@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Linq;
 using Spectre.Console;
 using System.Text;
 using System.Threading.Channels;
@@ -36,6 +36,8 @@ namespace TokyBay.Scraper.Strategies
                 ShowErrorMessage("Failed to fetch audiobook metadata");
                 return;
             }
+
+            SetFFmpegPath();
 
             var folderPath = PrepareOutputFolder(metadata.Title);
 
@@ -86,7 +88,7 @@ namespace TokyBay.Scraper.Strategies
                     }
 
                     ctx.Status("Fetching playlist...");
-                    var playlistResponse = await GetPlaylistAsync(audioBookId, postDetailToken, dynamicSlugId, userIdentity);
+                    var playlistResponse = await GetPlaylistAsync(audioBookId, postDetailToken, userIdentity);
                     if (playlistResponse == null)
                     {
                         _console.MarkupLine("[red]Failed to get playlist.[/]");
@@ -213,17 +215,18 @@ namespace TokyBay.Scraper.Strategies
             try
             {
                 var sanitizedTitle = SanitizeName(trackTitle);
-                var tempFolder = Path.Combine(folderPath, $"_temp_{sanitizedTitle}_{Guid.NewGuid():N}"[..30]);
+                var tempFolder = Path.Combine(folderPath, $"_temp_{trackNumber}_{Guid.NewGuid():N}");
                 Directory.CreateDirectory(tempFolder);
 
-                var basePath = trackSrc[..(trackSrc.LastIndexOf('/') + 1)];
-                var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc[(trackSrc.LastIndexOf('/') + 1)..]);
+                var lastSlash = trackSrc.LastIndexOf('/');
+                var basePath = trackSrc[..(lastSlash + 1)];
+                var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc[(lastSlash + 1)..]);
                 var m3u8Url = TokybookBaseUrl + AudioBaseApiPath + escapedTrackSrc;
 
                 var m3u8Content = await RetryAsync(async () =>
                 {
                     var content = await DownloadM3u8PlaylistAsync(audioBookId, streamToken, m3u8Url, escapedTrackSrc);
-                    return !string.IsNullOrEmpty(content) ? content : throw new Exception("Empty playlist");
+                    return !string.IsNullOrEmpty(content) ? content : throw new InvalidOperationException("Empty playlist");
                 }, _config.RetryAttempts, _config.RetryDelayMs);
 
                 if (string.IsNullOrEmpty(m3u8Content))
@@ -240,6 +243,14 @@ namespace TokyBay.Scraper.Strategies
                 }
 
                 await DownloadTsSegmentsAsync(audioBookId, streamToken, basePath, tsSegments, tempFolder);
+
+                var downloadedFiles = Directory.GetFiles(tempFolder, "*.ts").Length;
+                if (downloadedFiles < tsSegments.Count)
+                {
+                    _console.MarkupLine($"[yellow]Warning: Only {downloadedFiles}/{tsSegments.Count} segments found for {trackTitle}[/]");
+                    SafeDeleteDirectory(tempFolder);
+                    return null;
+                }
 
                 return new SegmentedTrackData
                 {
@@ -282,7 +293,6 @@ namespace TokyBay.Scraper.Strategies
         {
             var semaphore = new SemaphoreSlim(_config.MaxSegmentsPerTrack);
             var successCount = 0;
-            var lockObj = new object();
 
             var tasks = segments.Select((segment, index) => Task.Run(async () =>
             {
@@ -303,11 +313,10 @@ namespace TokyBay.Scraper.Strategies
                             var segmentPath = Path.Combine(outputFolder, $"{index:D4}_{segment}");
                             var bytes = await response.Content.ReadAsByteArrayAsync();
                             await File.WriteAllBytesAsync(segmentPath, bytes);
-
-                            lock (lockObj) { successCount++; }
+                            Interlocked.Increment(ref successCount);
                             return true;
                         }
-                        throw new Exception("Download failed");
+                        throw new InvalidOperationException("Segment download failed");
                     }, _config.RetryAttempts, 500);
                 }
                 finally
@@ -320,7 +329,7 @@ namespace TokyBay.Scraper.Strategies
 
             if (successCount < segments.Count)
             {
-                throw new Exception($"Only {successCount}/{segments.Count} segments downloaded");
+                throw new InvalidOperationException($"Only {successCount}/{segments.Count} segments downloaded");
             }
         }
 
@@ -328,6 +337,12 @@ namespace TokyBay.Scraper.Strategies
         {
             try
             {
+                if (!Directory.Exists(track.TempFolder))
+                    throw new InvalidOperationException($"Temp folder not found: {track.TempFolder}");
+
+                if (Directory.GetFiles(track.TempFolder, "*.ts").Length == 0)
+                    throw new InvalidOperationException("No segments available for merging");
+
                 if (_settings.ConvertToMp3)
                 {
                     var mp3Output = Path.Combine(track.FolderPath, $"{track.SanitizedTitle}.mp3");
@@ -344,7 +359,7 @@ namespace TokyBay.Scraper.Strategies
             }
             catch (Exception ex)
             {
-                throw new Exception($"Conversion failed: {ex.Message}", ex);
+                throw new InvalidOperationException($"Conversion failed: {ex.Message}", ex);
             }
         }
 
@@ -370,7 +385,7 @@ namespace TokyBay.Scraper.Strategies
             }
         }
 
-        private async Task<JObject?> GetPlaylistAsync(string audioBookId, string postDetailToken, string dynamicSlugId, JObject userIdentity)
+        private async Task<JObject?> GetPlaylistAsync(string audioBookId, string postDetailToken, JObject userIdentity)
         {
             try
             {
@@ -378,12 +393,7 @@ namespace TokyBay.Scraper.Strategies
                 {
                     ["audioBookId"] = audioBookId,
                     ["postDetailToken"] = postDetailToken,
-                    ["userIdentity"] = new JObject
-                    {
-                        ["ipAddress"] = userIdentity["ipAddress"],
-                        ["timestamp"] = userIdentity["timestamp"],
-                        ["userAgent"] = userIdentity["userAgent"]
-                    }
+                    ["userIdentity"] = userIdentity
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
@@ -412,11 +422,18 @@ namespace TokyBay.Scraper.Strategies
 
         private static string ExtractDynamicSlugId(string url)
         {
-            var uri = new Uri(url);
-            var segments = uri.Segments;
-            return segments.Length >= 3 && segments[1] == "post/"
-                ? segments[2].TrimEnd('/')
-                : string.Empty;
+            try
+            {
+                var uri = new Uri(url);
+                var segments = uri.Segments;
+                return segments.Length >= 3 && segments[1] == "post/"
+                    ? segments[2].TrimEnd('/')
+                    : string.Empty;
+            }
+            catch (UriFormatException)
+            {
+                return string.Empty;
+            }
         }
     }
 }
