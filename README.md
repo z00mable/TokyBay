@@ -6,6 +6,7 @@ Search & download audiobooks from multiple sites and convert them automatically 
 > This project is intended for educational purposes only. Please respect copyright laws and the terms of service of the respective websites.
 
 ![Last Updated](https://img.shields.io/github/last-commit/z00mable/TokyBay?label=Last%20Updated)
+![Downloads](https://img.shields.io/github/downloads/z00mable/TokyBay/total?label=Downloads)
 ![Repo Stars](https://img.shields.io/github/stars/z00mable/TokyBay?style=social)
 ![C#](https://img.shields.io/badge/C%23-C--Sharp-brightgreen?style=flat&logo=csharp)
 ![Platform](https://img.shields.io/badge/Platform-Cross--Platform-009688?logo=windows&logoColor=white)
