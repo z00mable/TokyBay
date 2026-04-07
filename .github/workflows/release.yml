@@ -1,0 +1,74 @@
+name: Release on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Extract version from csproj
+        id: version
+        run: |
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' TokyBay/TokyBay.csproj)
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Publish win-x64
+        run: |
+          dotnet publish TokyBay/TokyBay.csproj \
+            -c Release -r win-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -o publish/win-x64
+
+      - name: Publish linux-x64
+        run: |
+          dotnet publish TokyBay/TokyBay.csproj \
+            -c Release -r linux-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -o publish/linux-x64
+
+      - name: Publish linux-arm64
+        run: |
+          dotnet publish TokyBay/TokyBay.csproj \
+            -c Release -r linux-arm64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -o publish/linux-arm64
+
+      - name: Zip artifacts
+        run: |
+          cd publish
+          zip -j tokybay-win-x64.zip     win-x64/*
+          zip -j tokybay-linux-x64.zip   linux-x64/*
+          zip -j tokybay-linux-arm64.zip linux-arm64/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          name: v${{ steps.version.outputs.value }}
+          body: ${{ github.event.pull_request.body }}
+          make_latest: true
+          files: |
+            publish/tokybay-win-x64.zip
+            publish/tokybay-linux-x64.zip
+            publish/tokybay-linux-arm64.zip

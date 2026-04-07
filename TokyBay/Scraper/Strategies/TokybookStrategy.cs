@@ -47,7 +47,7 @@ namespace TokyBay.Scraper.Strategies
 
             await ProcessTracksInParallelAsync(metadata, folderPath);
 
-            ShowCompletionMessage();
+            ShowCompletionMessage(folderPath);
         }
 
         private async Task<StreamingAudiobookMetadata?> FetchMetadataAsync(string bookUrl)
