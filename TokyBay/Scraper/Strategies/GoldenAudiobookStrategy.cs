@@ -44,7 +44,7 @@ namespace TokyBay.Scraper.Strategies
 
             await ProcessDirectFilesInParallelAsync(metadata, folderPath);
 
-            ShowCompletionMessage();
+            ShowCompletionMessage(folderPath);
         }
 
         private async Task<SimpleAudiobookMetadata?> FetchMetadataAsync(string bookUrl)

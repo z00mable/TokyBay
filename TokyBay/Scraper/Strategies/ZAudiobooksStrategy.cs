@@ -1,5 +1,4 @@
 using Spectre.Console;
-using System.Text.RegularExpressions;
 using TokyBay.Models;
 using TokyBay.Scraper.Base;
 using TokyBay.Scraper.Configuration;
@@ -17,7 +16,7 @@ namespace TokyBay.Scraper.Strategies
 
         public override bool CanHandle(string bookUrl)
         {
-            return bookUrl.Contains("freeaudiobooks.top", StringComparison.OrdinalIgnoreCase) ||
+            return bookUrl.Contains("freeaudiobooks", StringComparison.OrdinalIgnoreCase) ||
                    bookUrl.Contains("zaudiobooks", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -43,7 +42,7 @@ namespace TokyBay.Scraper.Strategies
 
             await ProcessDirectFilesInParallelAsync(metadata, folderPath);
 
-            ShowCompletionMessage();
+            ShowCompletionMessage(folderPath);
         }
 
         private async Task<SimpleAudiobookMetadata?> FetchMetadataAsync(string bookUrl)

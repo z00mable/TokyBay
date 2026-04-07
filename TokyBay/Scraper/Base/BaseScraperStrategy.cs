@@ -301,9 +301,10 @@ namespace TokyBay.Scraper.Base
             return folderPath;
         }
 
-        protected void ShowCompletionMessage()
+        protected void ShowCompletionMessage(string folderPath)
         {
             _console.MarkupLine("[green]Download finished[/]");
+            _console.MarkupLine($"[grey]Audiobook saved in:[/] {folderPath}");
             _console.MarkupLine("Press any key to continue");
             _console.Input.ReadKey(true);
         }

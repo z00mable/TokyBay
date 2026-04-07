@@ -43,6 +43,7 @@ namespace TokyBay
 
         public void Clear(bool home) => console.Clear(home);
         public void Write(IRenderable renderable) => console.Write(renderable);
+        public void WriteAnsi(Action<AnsiWriter> writer) => console.WriteAnsi(writer);
 
         public Task<T> PromptAsync<T>(IPrompt<T> prompt, CancellationToken cancellationToken = default)
             => AnsiConsoleExtensions.PromptAsync(this, prompt, GetMergedCancellationToken(cancellationToken));
