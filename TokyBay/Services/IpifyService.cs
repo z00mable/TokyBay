@@ -3,18 +3,18 @@ using Spectre.Console;
 
 namespace TokyBay.Services
 {
-    public class IpifyService(IHttpService httpUtil, IAnsiConsole console) : IIpifyService
+    public class IpifyService(IHttpService httpService, IAnsiConsole console) : IIpifyService
     {
         private const string IpifyUrl = "https://api.ipify.org?format=json";
 
-        private readonly IHttpService _httpUtil = httpUtil;
+        private readonly IHttpService _httpService = httpService;
         private readonly IAnsiConsole _console = console;
 
         public async Task<JObject> GetUserIdentityAsync()
         {
             try
             {
-                var response = await _httpUtil.GetAsync(IpifyUrl);
+                var response = await _httpService.GetAsync(IpifyUrl);
                 var json = await response.Content.ReadAsStringAsync();
                 var data = JObject.Parse(json);
 

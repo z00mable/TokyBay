@@ -63,11 +63,20 @@ That's it. TokyBay will guide you through the rest.
 
 ## Supported Sites
 
+*Last checked: 2026-04-07*
+
 | Site | Status |
 |------|--------|
 | [tokybook.com](https://tokybook.com) | Website temporarily offline, API operational |
-| [zaudiobooks.com](https://zaudiobooks.com) / [freeaudiobooks.top](https://freeaudiobooks.top) | Working |
+| [zaudiobooks.com](https://zaudiobooks.com) / [freeaudiobooks.top](https://freeaudiobooks.top) | Currently unreachable |
 | [goldenaudiobook.net](https://goldenaudiobook.net) | Working |
+| [fulllengthaudiobooks.net](https://fulllengthaudiobooks.net) | Working |
+| [bigaudiobooks.net](https://bigaudiobooks.net) | Working |
+| [findaudiobook.com](https://findaudiobook.com) | Working |
+| [bookaudiobook.net](https://bookaudiobook.net) | Working |
+| [hotaudiobooks.com](https://hotaudiobooks.com) | Working |
+| [hdaudiobooks.net](https://hdaudiobooks.net) | Working |
+| [audiozaic.com](https://audiozaic.com) | Working |
 
 ## Features
 
@@ -75,7 +84,7 @@ That's it. TokyBay will guide you through the rest.
 2. **Direct URL download**: Download any audiobook directly by URL
 3. **M4B conversion**: Automatically convert to the M4B audiobook format after download
 4. **MP3 conversion**: Automatically convert to MP3 format after download
-5. **Multi-site support**: Works with Tokybook, ZAudiobooks/FreeAudiobooks, and GoldenAudiobook
+5. **Multi-site support**: Works with Tokybook, ZAudiobooks/FreeAudiobooks, GoldenAudiobook, and FullLengthAudiobooks
 6. **Settings**: Persistent in-app settings — download path, conversion preferences
 
 ## Usage

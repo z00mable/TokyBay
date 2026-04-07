@@ -9,9 +9,9 @@ namespace TokyBay.Scraper.Strategies
 {
     public partial class GoldenAudiobookStrategy(
         IAnsiConsole console,
-        IHttpService httpUtil,
+        IHttpService httpService,
         ISettingsService settingsService,
-        ScraperConfig? config = null) : BaseScraperStrategy(console, httpUtil, settingsService, config)
+        ScraperConfig? config = null) : BaseScraperStrategy(console, httpService, settingsService, config)
     {
         // Matches <source> tags with type="audio/mpeg" in either attribute order
         [GeneratedRegex(@"<source\b[^>]*type=""audio/mpeg""[^>]*>", RegexOptions.IgnoreCase)]
@@ -22,7 +22,13 @@ namespace TokyBay.Scraper.Strategies
 
         public override bool CanHandle(string bookUrl)
         {
-            return bookUrl.Contains("goldenaudiobook.net", StringComparison.OrdinalIgnoreCase);
+            return bookUrl.Contains("goldenaudiobook.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("fulllengthaudiobooks.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("bigaudiobooks.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("findaudiobook.com", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("bookaudiobook.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("hotaudiobooks.com", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("audiozaic.com", StringComparison.OrdinalIgnoreCase);
         }
 
         public override async Task DownloadBookAsync(string bookUrl)
@@ -66,7 +72,7 @@ namespace TokyBay.Scraper.Strategies
         {
             try
             {
-                var response = await _httpUtil.GetAsync(bookUrl);
+                var response = await _httpService.GetAsync(bookUrl);
                 response.EnsureSuccessStatusCode();
 
                 var html = await response.Content.ReadAsStringAsync();

@@ -72,7 +72,7 @@ jobs:
         run: |
           printf '%s' "$PR_BODY" > release_notes.md
           gh release create "v${{ steps.version.outputs.value }}" \
-            --title "v${{ steps.version.outputs.value }}" \
+            --title "Release v${{ steps.version.outputs.value }}" \
             --notes-file release_notes.md \
             --latest \
             publish/tokybay-win-x64.zip \

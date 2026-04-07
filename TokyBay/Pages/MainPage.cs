@@ -3,12 +3,12 @@
 namespace TokyBay.Pages
 {
     public class MainPage(
-        IPageService pageHandler,
+        IPageService pageService,
         SearchTokybookPage searchPage,
         DownloadPage downloadPage,
         SettingsPage settingsPage)
     {
-        private readonly IPageService _pageService = pageHandler;
+        private readonly IPageService _pageService = pageService;
         private readonly SearchTokybookPage _searchPage = searchPage;
         private readonly DownloadPage _downloadPage = downloadPage;
         private readonly SettingsPage _settingsPage = settingsPage;
