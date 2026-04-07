@@ -19,7 +19,11 @@ IScraperStrategy                          (Scraper/Abstractions/)
     └── BaseScraperStrategy               (Scraper/Base/)
             ├── TokybookStrategy          (Scraper/Strategies/) — tokybook.com
             ├── ZAudiobooksStrategy       (Scraper/Strategies/) — zaudiobooks / freeaudiobooks.top
-            └── GoldenAudiobookStrategy   (Scraper/Strategies/) — goldenaudiobook.net
+            ├── GoldenAudiobookStrategy   (Scraper/Strategies/) — alle Sites mit `<source type="audio/mpeg">` Struktur:
+            │                             goldenaudiobook.net, fulllengthaudiobooks.net, bigaudiobooks.net,
+            │                             findaudiobook.com, bookaudiobook.net, hotaudiobooks.com, audiozaic.com
+            └── PlaylistAudiobookStrategy (Scraper/Strategies/) — alle Sites mit `data-playlist` JSON-Attribut:
+                                          hdaudiobooks.net
 ```
 
 - `ScraperFactory` wählt per `CanHandle(url)` die passende Strategie aus

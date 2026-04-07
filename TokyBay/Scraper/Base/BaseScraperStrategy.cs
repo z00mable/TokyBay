@@ -11,12 +11,12 @@ namespace TokyBay.Scraper.Base
 {
     public abstract partial class BaseScraperStrategy(
         IAnsiConsole console,
-        IHttpService httpUtil,
+        IHttpService httpService,
         ISettingsService settingsService,
         ScraperConfig? config = null) : IScraperStrategy
     {
         protected readonly IAnsiConsole _console = console;
-        protected readonly IHttpService _httpUtil = httpUtil;
+        protected readonly IHttpService _httpService = httpService;
         protected readonly UserSettings _settings = settingsService.GetSettings();
         protected readonly ScraperConfig _config = config ?? new ScraperConfig();
 
@@ -137,7 +137,7 @@ namespace TokyBay.Scraper.Base
             var filePath = Path.Combine(folderPath, trackTitle);
             try
             {
-                var response = await _httpUtil.GetAsync(trackSrc);
+                var response = await _httpService.GetAsync(trackSrc);
                 if (!response.IsSuccessStatusCode)
                 {
                     _console.MarkupLine($"[red]Could not download chapter: {trackTitle}[/]");

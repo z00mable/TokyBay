@@ -11,10 +11,10 @@ namespace TokyBay.Scraper.Strategies
 {
     public class TokybookStrategy(
         IAnsiConsole console,
-        IHttpService httpUtil,
+        IHttpService httpService,
         IIpifyService ipifyService,
         ISettingsService settingsService,
-        ScraperConfig? config = null) : BaseScraperStrategy(console, httpUtil, settingsService, config)
+        ScraperConfig? config = null) : BaseScraperStrategy(console, httpService, settingsService, config)
     {
         private const string TokybookBaseUrl = "https://tokybook.com";
         private const string PostDetailsApiPath = "/api/v1/search/post-details";
@@ -374,7 +374,7 @@ namespace TokyBay.Scraper.Strategies
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                var response = await _httpUtil.PostAsync(TokybookBaseUrl + PostDetailsApiPath, content);
+                var response = await _httpService.PostAsync(TokybookBaseUrl + PostDetailsApiPath, content);
 
                 return response.IsSuccessStatusCode ? JObject.Parse(await response.Content.ReadAsStringAsync()) : null;
             }
@@ -397,7 +397,7 @@ namespace TokyBay.Scraper.Strategies
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                var response = await _httpUtil.PostAsync(TokybookBaseUrl + PlaylistApiPath, content);
+                var response = await _httpService.PostAsync(TokybookBaseUrl + PlaylistApiPath, content);
 
                 return response.IsSuccessStatusCode ? JObject.Parse(await response.Content.ReadAsStringAsync()) : null;
             }
@@ -417,7 +417,7 @@ namespace TokyBay.Scraper.Strategies
                 { "x-track-src", trackSrc }
             };
 
-            return await _httpUtil.GetAsync(url, headers);
+            return await _httpService.GetAsync(url, headers);
         }
 
         private static string ExtractDynamicSlugId(string url)

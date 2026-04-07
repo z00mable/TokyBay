@@ -10,7 +10,7 @@ namespace TokyBay.Services
     public class SettingsService(IAnsiConsole console) : ISettingsService
     {
         private readonly IAnsiConsole _console = console;
-        private UserSettings _userSettings = new UserSettings();
+        private readonly UserSettings _userSettings = new UserSettings();
 
         public UserSettings GetSettings() => _userSettings;
 

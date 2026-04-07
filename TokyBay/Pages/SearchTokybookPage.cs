@@ -8,7 +8,7 @@ namespace TokyBay.Pages
     public class SearchTokybookPage(
         IAnsiConsole console,
         IPageService pageService,
-        IHttpService httpUtil,
+        IHttpService httpService,
         IIpifyService ipifyService,
         DownloadService downloadService)
     {
@@ -18,7 +18,7 @@ namespace TokyBay.Pages
 
         private readonly IAnsiConsole _console = console;
         private readonly IPageService _pageService = pageService;
-        private readonly IHttpService _httpUtil = httpUtil;
+        private readonly IHttpService _httpService = httpService;
         private readonly IIpifyService _ipifyService = ipifyService;
         private readonly DownloadService _downloadService = downloadService;
 
@@ -126,7 +126,7 @@ namespace TokyBay.Pages
                 };
 
                 var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                var response = await _httpUtil.PostAsync(TokybookUrl + SearchApiPath, content);
+                var response = await _httpService.PostAsync(TokybookUrl + SearchApiPath, content);
 
                 if (!response.IsSuccessStatusCode)
                 {

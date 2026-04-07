@@ -45,7 +45,7 @@ class Program
             config.MaxParallelConversions = 3;
             config.MaxSegmentsPerTrack = 8;
             config.RetryAttempts = 3;
-            config.RetryDelayMs = 1000;
+            config.RetryDelayMs = 100;
         });
 
         services.AddTransient<MainPage>();

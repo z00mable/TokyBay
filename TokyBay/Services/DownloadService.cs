@@ -32,6 +32,13 @@ namespace TokyBay.Services
             {
                 "tokybook.com",
                 "goldenaudiobook.net",
+                "fulllengthaudiobooks.net",
+                "bigaudiobooks.net",
+                "findaudiobook.com",
+                "bookaudiobook.net",
+                "hotaudiobooks.com",
+                "hdaudiobooks.net",
+                "audiozaic.com",
                 "freeaudiobooks.top",
                 "zaudiobooks.com"
             };
