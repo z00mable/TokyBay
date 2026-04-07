@@ -51,12 +51,32 @@ jobs:
             -p:DebugType=none \
             -o publish/linux-arm64
 
+      - name: Publish osx-x64
+        run: |
+          dotnet publish TokyBay/TokyBay.csproj \
+            -c Release -r osx-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -o publish/osx-x64
+
+      - name: Publish osx-arm64
+        run: |
+          dotnet publish TokyBay/TokyBay.csproj \
+            -c Release -r osx-arm64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -o publish/osx-arm64
+
       - name: Zip artifacts
         run: |
           cd publish
           zip -j tokybay-win-x64.zip     win-x64/*
           zip -j tokybay-linux-x64.zip   linux-x64/*
           zip -j tokybay-linux-arm64.zip linux-arm64/*
+          zip -j tokybay-osx-x64.zip     osx-x64/*
+          zip -j tokybay-osx-arm64.zip   osx-arm64/*
 
       - name: Create and push version tag
         run: |
@@ -77,4 +97,6 @@ jobs:
             --latest \
             publish/tokybay-win-x64.zip \
             publish/tokybay-linux-x64.zip \
-            publish/tokybay-linux-arm64.zip
+            publish/tokybay-linux-arm64.zip \
+            publish/tokybay-osx-x64.zip \
+            publish/tokybay-osx-arm64.zip
