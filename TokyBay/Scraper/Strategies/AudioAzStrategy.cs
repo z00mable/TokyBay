@@ -1,0 +1,107 @@
+using Newtonsoft.Json.Linq;
+using Spectre.Console;
+using System.Text.RegularExpressions;
+using TokyBay.Models;
+using TokyBay.Scraper.Base;
+using TokyBay.Scraper.Configuration;
+using TokyBay.Services;
+
+namespace TokyBay.Scraper.Strategies
+{
+    public partial class AudioAzStrategy(
+        IAnsiConsole console,
+        IHttpService httpService,
+        ISettingsService settingsService,
+        ScraperConfig? config = null) : BaseScraperStrategy(console, httpService, settingsService, config)
+    {
+        // Matches the "tracks":[...] JSON array after unescaping
+        [GeneratedRegex(@"""tracks"":\s*(\[\{.*?\}\])", RegexOptions.Singleline)]
+        private static partial Regex TracksJsonRegex();
+
+        // Strips escape backslashes preceding JSON structural characters
+        [GeneratedRegex(@"\\+(?=[""[\]{}/])")]
+        private static partial Regex EscapeBackslashRegex();
+
+        public override bool CanHandle(string bookUrl)
+        {
+            return bookUrl.Contains("audioaz.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public override async Task DownloadBookAsync(string bookUrl)
+        {
+            var metadata = await FetchMetadataAsync(bookUrl);
+            if (metadata == null || metadata.ChapterUrls.Count == 0)
+            {
+                ShowErrorMessage("No valid tracks found");
+                return;
+            }
+
+            SetFFmpegPath();
+
+            var folderPath = PrepareOutputFolder(metadata.Title);
+
+            _console.MarkupLine($"[green]Found {metadata.ChapterUrls.Count} tracks[/]");
+            _console.MarkupLine($"[blue]Parallel downloads:[/] {_config.MaxParallelDownloads}");
+            _console.MarkupLine($"[blue]Parallel conversions:[/] {_config.MaxParallelConversions}");
+
+            await ProcessDirectFilesInParallelAsync(metadata, folderPath);
+
+            ShowCompletionMessage(folderPath);
+        }
+
+        private async Task<SimpleAudiobookMetadata?> FetchMetadataAsync(string bookUrl)
+        {
+            SimpleAudiobookMetadata? metadata = null;
+
+            await _console.Status()
+                .SpinnerStyle(Style.Parse("blue bold"))
+                .StartAsync("Preparing download...", async ctx =>
+                {
+                    ctx.Status("Fetching page...");
+                    metadata = await GetChapterUrlsAsync(bookUrl);
+                });
+
+            return metadata;
+        }
+
+        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl)
+        {
+            try
+            {
+                var response = await _httpService.GetAsync(bookUrl);
+                response.EnsureSuccessStatusCode();
+
+                var html = await response.Content.ReadAsStringAsync();
+
+                var normalized = EscapeBackslashRegex().Replace(html, "");
+
+                var match = TracksJsonRegex().Match(normalized);
+                if (!match.Success)
+                    return null;
+
+                var tracksArray = JArray.Parse(match.Groups[1].Value);
+
+                var chapterUrls = tracksArray
+                    .OrderBy(t => t["order"]?.Value<int>() ?? 0)
+                    .Select(t => t["audio_url"]?.ToString())
+                    .Where(url => !string.IsNullOrEmpty(url))
+                    .Select(url => url!)
+                    .ToList();
+
+                if (chapterUrls.Count == 0)
+                    return null;
+
+                return new SimpleAudiobookMetadata
+                {
+                    Title = ExtractTitleFromH1(html),
+                    ChapterUrls = chapterUrls
+                };
+            }
+            catch (Exception ex)
+            {
+                _console.MarkupLine($"[red]Error fetching chapter URLs: {ex.Message}[/]");
+                return null;
+            }
+        }
+    }
+}

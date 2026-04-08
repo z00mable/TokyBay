@@ -30,16 +30,17 @@ namespace TokyBay.Services
         {
             return new[]
             {
-                "tokybook.com",
-                "goldenaudiobook.net",
-                "fulllengthaudiobooks.net",
-                "bigaudiobooks.net",
-                "findaudiobook.com",
-                "bookaudiobook.net",
-                "hotaudiobooks.com",
-                "hdaudiobooks.net",
+                "audioaz.com",
                 "audiozaic.com",
+                "bigaudiobooks.net",
+                "bookaudiobook.net",
+                "findaudiobook.com",
                 "freeaudiobooks.top",
+                "fulllengthaudiobooks.net",
+                "goldenaudiobook.net",
+                "hdaudiobooks.net",
+                "hotaudiobooks.com",
+                "tokybook.com",
                 "zaudiobooks.com"
             };
         }

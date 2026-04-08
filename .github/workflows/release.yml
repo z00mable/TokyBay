@@ -18,6 +18,14 @@ jobs:
           git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" .
           git checkout ${{ github.event.pull_request.merge_commit_sha }}
 
+      - name: Install .NET 10 SDK
+        run: |
+          wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
+          chmod +x dotnet-install.sh
+          ./dotnet-install.sh --channel 10.0
+          echo "$HOME/.dotnet" >> $GITHUB_PATH
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> $GITHUB_ENV
+
       - name: Extract version from csproj
         id: version
         run: |

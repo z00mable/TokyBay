@@ -68,21 +68,22 @@ That's it. TokyBay will guide you through the rest.
 
 ## Supported Sites
 
-*Last checked: 2026-04-07*
+*Last checked: 2026-04-08*
 
 | Site | Status |
 |------|--------|
-| [tokybook.com](https://tokybook.com) | <font color="red">Website temporarily offline</font>, <font color="green">API operational</font> |
-| [hdaudiobooks.net](https://hdaudiobooks.net) | <font color="green">Working</font> |
-| [goldenaudiobook.net](https://goldenaudiobook.net) | <font color="green">Working</font> |
-| [fulllengthaudiobooks.net](https://fulllengthaudiobooks.net) | <font color="green">Working</font> |
-| [bigaudiobooks.net](https://bigaudiobooks.net) | <font color="green">Working</font> |
-| [findaudiobook.com](https://findaudiobook.com) | <font color="green">Working</font> |
-| [bookaudiobook.net](https://bookaudiobook.net) | <font color="green">Working</font> |
-| [hotaudiobooks.com](https://hotaudiobooks.com) | <font color="green">Working</font> |
-| [audiozaic.com](https://audiozaic.com) | <font color="green">Working</font> |
-| [zaudiobooks.com](https://zaudiobooks.com) | <font color="red">Currently unreachable</font> |
-| [freeaudiobooks.top](https://freeaudiobooks.top) | <font color="red">Currently unreachable</font> |
+| [audioaz.com](https://audioaz.com) | 🟢 Working |
+| [audiozaic.com](https://audiozaic.com) | 🟢 Working |
+| [bigaudiobooks.net](https://bigaudiobooks.net) | 🟢 Working |
+| [bookaudiobook.net](https://bookaudiobook.net) | 🟢 Working |
+| [findaudiobook.com](https://findaudiobook.com) | 🟢 Working |
+| [freeaudiobooks.top](https://freeaudiobooks.top) | 🔴 Currently unreachable |
+| [fulllengthaudiobooks.net](https://fulllengthaudiobooks.net) | 🟢 Working |
+| [goldenaudiobook.net](https://goldenaudiobook.net) | 🟢 Working |
+| [hdaudiobooks.net](https://hdaudiobooks.net) | 🟢 Working |
+| [hotaudiobooks.com](https://hotaudiobooks.com) | 🟢 Working |
+| [tokybook.com](https://tokybook.com) | 🔴 Website temporarily offline, 🟢 API operational |
+| [zaudiobooks.com](https://zaudiobooks.com) | 🔴 Currently unreachable |
 
 ## Features
 
@@ -116,7 +117,7 @@ That's it. TokyBay will guide you through the rest.
 - Change the FFmpeg binary path
 
 > [!Tip]
-> By default, TokyBay downloads to the folder it is run from. You can change this inside the app's settings, or pass a custom path via `-d "C:\Users\User\Music"` when launching from the terminal.
+> By default, TokyBay downloads to your **Music** folder on Windows (`C:\Users\<User>\Music`) or your **home directory** on Linux/macOS. You can change this inside the app's settings, or pass a custom path via `-d "C:\Path\To\Downloads"` when launching from the terminal.
 
 ---
 
@@ -127,7 +128,7 @@ That's it. TokyBay will guide you through the rest.
 
 ### Prerequisites
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 ### Clone and run
 

@@ -57,79 +57,143 @@ namespace TokyBay.Scraper.Base
             var totalTracks = metadata.ChapterUrls.Count;
             var lockObj = new object();
 
-            var downloadTasks = metadata.ChapterUrls.Select((chapterUrl, index) => Task.Run(async () =>
-            {
-                var trackTitle = Path.GetFileName(new Uri(chapterUrl.Split('?')[0]).LocalPath);
-
-                await downloadSemaphore.WaitAsync();
-                try
+            await _console.Progress()
+                .AutoRefresh(true)
+                .HideCompleted(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new DownloadedColumn(),
+                    new SpinnerColumn())
+                .StartAsync(async ctx =>
                 {
-                    await Task.Delay(100 * (index + 1));
-
-                    var filePath = await DownloadDirectFileAsync(chapterUrl, trackTitle, folderPath);
-
-                    if (!string.IsNullOrEmpty(filePath))
+                    var downloadTasks = metadata.ChapterUrls.Select((chapterUrl, index) => Task.Run(async () =>
                     {
-                        var trackData = new DirectFileTrackData
-                        {
-                            FilePath = filePath,
-                            FolderPath = folderPath,
-                            TrackTitle = trackTitle,
-                            SanitizedTitle = SanitizeName(trackTitle),
-                            TrackNumber = index + 1,
-                            TotalTracks = totalTracks
-                        };
+                        var trackTitle = Path.GetFileName(new Uri(chapterUrl.Split('?')[0]).LocalPath);
+                        var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(trackTitle)}", autoStart: false);
 
-                        await conversionChannel.Writer.WriteAsync(trackData);
-
-                        lock (lockObj)
-                        {
-                            completedDownloads++;
-                            _console.MarkupLine($"[green]Downloaded:[/] {completedDownloads}/{totalTracks} - {trackTitle}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    lock (lockObj)
-                    {
-                        _console.MarkupLine($"[red]Download error for {trackTitle}: {ex.Message}[/]");
-                    }
-                }
-                finally
-                {
-                    downloadSemaphore.Release();
-                }
-            })).ToList();
-
-            var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
-                .Select(_ => Task.Run(async () =>
-                {
-                    await foreach (var track in conversionChannel.Reader.ReadAllAsync())
-                    {
+                        await downloadSemaphore.WaitAsync();
                         try
                         {
-                            await ConvertDirectFileTrackAsync(track);
+                            await Task.Delay(100 * (index + 1));
+                            progressTask.StartTask();
 
-                            lock (lockObj)
+                            var filePath = await DownloadDirectFileWithProgressAsync(chapterUrl, trackTitle, folderPath, progressTask);
+
+                            if (!string.IsNullOrEmpty(filePath))
                             {
-                                completedConversions++;
-                                _console.MarkupLine($"[cyan]Converted:[/] {completedConversions}/{totalTracks} - {track.TrackTitle}");
+                                var trackData = new DirectFileTrackData
+                                {
+                                    FilePath = filePath,
+                                    FolderPath = folderPath,
+                                    TrackTitle = trackTitle,
+                                    SanitizedTitle = SanitizeName(trackTitle),
+                                    TrackNumber = index + 1,
+                                    TotalTracks = totalTracks
+                                };
+
+                                await conversionChannel.Writer.WriteAsync(trackData);
+
+                                lock (lockObj)
+                                {
+                                    completedDownloads++;
+                                    progressTask.Description = $"[green]Done {completedDownloads}/{totalTracks}[/] {Markup.Escape(trackTitle)}";
+                                }
                             }
                         }
                         catch (Exception ex)
                         {
                             lock (lockObj)
                             {
-                                _console.MarkupLine($"[red]Conversion error for {track.TrackTitle}: {ex.Message}[/]");
+                                progressTask.Description = $"[red]Failed[/] {Markup.Escape(trackTitle)}";
+                                _console.MarkupLine($"[red]Download error for {Markup.Escape(trackTitle)}: {Markup.Escape(ex.Message)}[/]");
                             }
                         }
-                    }
-                })).ToList();
+                        finally
+                        {
+                            downloadSemaphore.Release();
+                        }
+                    })).ToList();
 
-            await Task.WhenAll(downloadTasks);
-            conversionChannel.Writer.Complete();
-            await Task.WhenAll(conversionTasks);
+                    var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
+                        .Select(_ => Task.Run(async () =>
+                        {
+                            await foreach (var track in conversionChannel.Reader.ReadAllAsync())
+                            {
+                                var convTask = ctx.AddTask($"[cyan]Converting[/] {Markup.Escape(track.TrackTitle)}");
+                                convTask.IsIndeterminate = true;
+
+                                try
+                                {
+                                    await ConvertDirectFileTrackAsync(track);
+
+                                    lock (lockObj)
+                                    {
+                                        completedConversions++;
+                                        convTask.IsIndeterminate = false;
+                                        convTask.Value = 100;
+                                        convTask.Description = $"[cyan]Converted {completedConversions}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}";
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    lock (lockObj)
+                                    {
+                                        convTask.IsIndeterminate = false;
+                                        convTask.Value = 100;
+                                        convTask.Description = $"[red]Conv. failed[/] {Markup.Escape(track.TrackTitle)}";
+                                        _console.MarkupLine($"[red]Conversion error for {Markup.Escape(track.TrackTitle)}: {Markup.Escape(ex.Message)}[/]");
+                                    }
+                                }
+                            }
+                        })).ToList();
+
+                    await Task.WhenAll(downloadTasks);
+                    conversionChannel.Writer.Complete();
+                    await Task.WhenAll(conversionTasks);
+                });
+        }
+
+        private async Task<string> DownloadDirectFileWithProgressAsync(string trackSrc, string trackTitle, string folderPath, ProgressTask progressTask)
+        {
+            var filePath = Path.Combine(folderPath, trackTitle);
+            try
+            {
+                var response = await _httpService.GetAsync(trackSrc);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _console.MarkupLine($"[red]Could not download chapter: {Markup.Escape(trackTitle)}[/]");
+                    return string.Empty;
+                }
+
+                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+                progressTask.MaxValue = totalBytes > 0 ? totalBytes : 1;
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = File.Create(filePath);
+
+                var buffer = new byte[81920];
+                long totalRead = 0;
+                int bytesRead;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    totalRead += bytesRead;
+                    progressTask.Value = totalRead;
+                }
+
+                if (totalBytes == 0)
+                    progressTask.Value = progressTask.MaxValue;
+
+                return filePath;
+            }
+            catch (Exception ex)
+            {
+                _console.MarkupLine($"[red]Error downloading chapter {Markup.Escape(trackSrc)}: {Markup.Escape(ex.Message)}[/]");
+                return string.Empty;
+            }
         }
 
         protected async Task<string> DownloadDirectFileAsync(string trackSrc, string trackTitle, string folderPath)

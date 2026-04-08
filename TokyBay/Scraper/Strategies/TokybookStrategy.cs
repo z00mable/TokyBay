@@ -133,84 +133,113 @@ namespace TokyBay.Scraper.Strategies
             var totalTracks = metadata.Tracks.Count;
             var lockObj = new object();
 
-            var downloadTasks = metadata.Tracks.Select((track, index) => Task.Run(async () =>
-            {
-                await downloadSemaphore.WaitAsync();
-                try
+            await _console.Progress()
+                .AutoRefresh(true)
+                .HideCompleted(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new SpinnerColumn())
+                .StartAsync(async ctx =>
                 {
-                    await Task.Delay(10 * (index + 1));
-
-                    var downloadedTrack = await DownloadTrackAsync(
-                        metadata.AudioBookId,
-                        metadata.StreamToken,
-                        track.Src,
-                        track.TrackTitle,
-                        folderPath,
-                        index + 1,
-                        totalTracks);
-
-                    if (downloadedTrack != null)
+                    var downloadTasks = metadata.Tracks.Select((track, index) => Task.Run(async () =>
                     {
-                        await conversionChannel.Writer.WriteAsync(downloadedTrack);
+                        var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}", autoStart: false);
 
-                        lock (lockObj)
-                        {
-                            completedDownloads++;
-                            _console.MarkupLine($"[green]Downloaded:[/] {completedDownloads}/{totalTracks} - {track.TrackTitle}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    lock (lockObj)
-                    {
-                        _console.MarkupLine($"[red]Download error for {track.TrackTitle}: {ex.Message}[/]");
-                    }
-                }
-                finally
-                {
-                    downloadSemaphore.Release();
-                }
-            })).ToList();
-
-            var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
-                .Select(_ => Task.Run(async () =>
-                {
-                    await foreach (var track in conversionChannel.Reader.ReadAllAsync())
-                    {
+                        await downloadSemaphore.WaitAsync();
                         try
                         {
-                            await ConvertSegmentedTrackAsync(track);
+                            await Task.Delay(10 * (index + 1));
+                            progressTask.StartTask();
 
-                            lock (lockObj)
+                            var downloadedTrack = await DownloadTrackWithProgressAsync(
+                                metadata.AudioBookId,
+                                metadata.StreamToken,
+                                track.Src,
+                                track.TrackTitle,
+                                folderPath,
+                                index + 1,
+                                totalTracks,
+                                progressTask);
+
+                            if (downloadedTrack != null)
                             {
-                                completedConversions++;
-                                _console.MarkupLine($"[cyan]Converted:[/] {completedConversions}/{totalTracks} - {track.TrackTitle}");
+                                await conversionChannel.Writer.WriteAsync(downloadedTrack);
+
+                                lock (lockObj)
+                                {
+                                    completedDownloads++;
+                                    progressTask.Description = $"[green]Done {completedDownloads}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}";
+                                }
+                            }
+                            else
+                            {
+                                progressTask.Description = $"[red]Failed[/] {Markup.Escape(track.TrackTitle)}";
                             }
                         }
                         catch (Exception ex)
                         {
                             lock (lockObj)
                             {
-                                _console.MarkupLine($"[red]Conversion error for {track.TrackTitle}: {ex.Message}[/]");
+                                progressTask.Description = $"[red]Failed[/] {Markup.Escape(track.TrackTitle)}";
+                                _console.MarkupLine($"[red]Download error for {Markup.Escape(track.TrackTitle)}: {Markup.Escape(ex.Message)}[/]");
                             }
                         }
-                    }
-                })).ToList();
+                        finally
+                        {
+                            downloadSemaphore.Release();
+                        }
+                    })).ToList();
 
-            await Task.WhenAll(downloadTasks);
-            conversionChannel.Writer.Complete();
-            await Task.WhenAll(conversionTasks);
+                    var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
+                        .Select(_ => Task.Run(async () =>
+                        {
+                            await foreach (var track in conversionChannel.Reader.ReadAllAsync())
+                            {
+                                var convTask = ctx.AddTask($"[cyan]Converting[/] {Markup.Escape(track.TrackTitle)}");
+                                convTask.IsIndeterminate = true;
+
+                                try
+                                {
+                                    await ConvertSegmentedTrackAsync(track);
+
+                                    lock (lockObj)
+                                    {
+                                        completedConversions++;
+                                        convTask.IsIndeterminate = false;
+                                        convTask.Value = 100;
+                                        convTask.Description = $"[cyan]Converted {completedConversions}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}";
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    lock (lockObj)
+                                    {
+                                        convTask.IsIndeterminate = false;
+                                        convTask.Value = 100;
+                                        convTask.Description = $"[red]Conv. failed[/] {Markup.Escape(track.TrackTitle)}";
+                                        _console.MarkupLine($"[red]Conversion error for {Markup.Escape(track.TrackTitle)}: {Markup.Escape(ex.Message)}[/]");
+                                    }
+                                }
+                            }
+                        })).ToList();
+
+                    await Task.WhenAll(downloadTasks);
+                    conversionChannel.Writer.Complete();
+                    await Task.WhenAll(conversionTasks);
+                });
         }
 
-        private async Task<SegmentedTrackData?> DownloadTrackAsync(
+        private async Task<SegmentedTrackData?> DownloadTrackWithProgressAsync(
             string audioBookId,
             string streamToken,
             string trackSrc,
             string trackTitle,
             string folderPath,
             int trackNumber,
-            int totalTracks)
+            int totalTracks,
+            ProgressTask progressTask)
         {
             try
             {
@@ -223,6 +252,8 @@ namespace TokyBay.Scraper.Strategies
                 var escapedTrackSrc = basePath + Uri.EscapeDataString(trackSrc[(lastSlash + 1)..]);
                 var m3u8Url = TokybookBaseUrl + AudioBaseApiPath + escapedTrackSrc;
 
+                progressTask.IsIndeterminate = true;
+
                 var m3u8Content = await RetryAsync(async () =>
                 {
                     var content = await DownloadM3u8PlaylistAsync(audioBookId, streamToken, m3u8Url, escapedTrackSrc);
@@ -232,6 +263,7 @@ namespace TokyBay.Scraper.Strategies
                 if (string.IsNullOrEmpty(m3u8Content))
                 {
                     SafeDeleteDirectory(tempFolder);
+                    progressTask.Value = progressTask.MaxValue;
                     return null;
                 }
 
@@ -239,15 +271,20 @@ namespace TokyBay.Scraper.Strategies
                 if (tsSegments.Count == 0)
                 {
                     SafeDeleteDirectory(tempFolder);
+                    progressTask.Value = progressTask.MaxValue;
                     return null;
                 }
 
-                await DownloadTsSegmentsAsync(audioBookId, streamToken, basePath, tsSegments, tempFolder);
+                progressTask.IsIndeterminate = false;
+                progressTask.MaxValue = tsSegments.Count;
+                progressTask.Value = 0;
+
+                await DownloadTsSegmentsWithProgressAsync(audioBookId, streamToken, basePath, tsSegments, tempFolder, progressTask);
 
                 var downloadedFiles = Directory.GetFiles(tempFolder, "*.ts").Length;
                 if (downloadedFiles < tsSegments.Count)
                 {
-                    _console.MarkupLine($"[yellow]Warning: Only {downloadedFiles}/{tsSegments.Count} segments found for {trackTitle}[/]");
+                    _console.MarkupLine($"[yellow]Warning: Only {downloadedFiles}/{tsSegments.Count} segments found for {Markup.Escape(trackTitle)}[/]");
                     SafeDeleteDirectory(tempFolder);
                     return null;
                 }
@@ -265,7 +302,7 @@ namespace TokyBay.Scraper.Strategies
             }
             catch (Exception ex)
             {
-                _console.MarkupLine($"[red]Error downloading track {trackTitle}: {ex.Message}[/]");
+                _console.MarkupLine($"[red]Error downloading track {Markup.Escape(trackTitle)}: {Markup.Escape(ex.Message)}[/]");
                 return null;
             }
         }
@@ -284,12 +321,13 @@ namespace TokyBay.Scraper.Strategies
                 .ToList();
         }
 
-        private async Task DownloadTsSegmentsAsync(
+        private async Task DownloadTsSegmentsWithProgressAsync(
             string audioBookId,
             string streamToken,
             string basePath,
             List<string> segments,
-            string outputFolder)
+            string outputFolder,
+            ProgressTask progressTask)
         {
             var semaphore = new SemaphoreSlim(_config.MaxSegmentsPerTrack);
             var successCount = 0;
@@ -314,6 +352,7 @@ namespace TokyBay.Scraper.Strategies
                             var bytes = await response.Content.ReadAsByteArrayAsync();
                             await File.WriteAllBytesAsync(segmentPath, bytes);
                             Interlocked.Increment(ref successCount);
+                            progressTask.Increment(1);
                             return true;
                         }
                         throw new InvalidOperationException("Segment download failed");
