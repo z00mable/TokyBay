@@ -18,8 +18,8 @@ namespace TokyBay
             services.AddSingleton(config);
 
             services.AddTransient<IScraperStrategy, TokybookStrategy>();
-            services.AddTransient<IScraperStrategy, ZAudiobooksStrategy>();
-            services.AddTransient<IScraperStrategy, GoldenAudiobookStrategy>();
+            services.AddTransient<IScraperStrategy, DropboxTracksStrategy>();
+            services.AddTransient<IScraperStrategy, AudioSourceTagStrategy>();
             services.AddTransient<IScraperStrategy, PlaylistAudiobookStrategy>();
             services.AddTransient<IScraperStrategy, AudioAzStrategy>();
 

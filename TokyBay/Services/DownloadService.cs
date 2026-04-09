@@ -30,6 +30,7 @@ namespace TokyBay.Services
         {
             return new[]
             {
+                "appaudiobooks.com",
                 "audioaz.com",
                 "audiozaic.com",
                 "bigaudiobooks.net",

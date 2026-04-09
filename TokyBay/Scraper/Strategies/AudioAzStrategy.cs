@@ -58,13 +58,13 @@ namespace TokyBay.Scraper.Strategies
                 .StartAsync("Preparing download...", async ctx =>
                 {
                     ctx.Status("Fetching page...");
-                    metadata = await GetChapterUrlsAsync(bookUrl);
+                    metadata = await GetChapterUrlsAsync(bookUrl, ctx);
                 });
 
             return metadata;
         }
 
-        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl)
+        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl, StatusContext ctx)
         {
             try
             {
@@ -91,11 +91,14 @@ namespace TokyBay.Scraper.Strategies
                 if (chapterUrls.Count == 0)
                     return null;
 
-                return new SimpleAudiobookMetadata
+                var result = new SimpleAudiobookMetadata
                 {
-                    Title = ExtractTitleFromH1(html),
+                    Title = CleanupBookTitle(ExtractTitleFromH1(html)),
                     ChapterUrls = chapterUrls
                 };
+                await EnrichFromFirstTrackTagsAsync(result, ctx);
+                ExtractCommonMetadata(html, result);
+                return result;
             }
             catch (Exception ex)
             {

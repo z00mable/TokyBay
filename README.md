@@ -1,6 +1,6 @@
 # TokyBay
 
-Search & download audiobooks from multiple sites and convert them automatically to the audiobook-friendly M4B format or good old MP3.
+Search, download, and tag audiobooks from multiple sites — automatically converted to M4B or MP3, with cover art, author, narrator, and chapter titles embedded directly into every file.
 
 > [!Important]
 > Tokybook.com is currently undergoing a major platform overhaul and the website is temporarily closed. However, **TokyBay continues to work** — search and downloads still function via the Tokybook API.
@@ -72,6 +72,7 @@ That's it. TokyBay will guide you through the rest.
 
 | Site | Status |
 |------|--------|
+| [appaudiobooks.com](https://appaudiobooks.com/) | 🟢 Working |
 | [audioaz.com](https://audioaz.com) | 🟢 Working |
 | [audiozaic.com](https://audiozaic.com) | 🟢 Working |
 | [bigaudiobooks.net](https://bigaudiobooks.net) | 🟢 Working |
@@ -91,8 +92,25 @@ That's it. TokyBay will guide you through the rest.
 2. **Direct URL download**: Download any audiobook directly by URL on supported sites
 3. **M4B conversion**: Automatically convert to the M4B audiobook format after download
 4. **MP3 conversion**: Automatically convert to MP3 format after download
-5. **Multi-site support**: Works with Tokybook and many other sites
-6. **Settings**: Persistent in-app settings — download path, conversion preferences
+5. **Metadata tagging**: Embeds rich metadata into every converted file — cover art, author, narrator, chapter title, track number, genre, description, and publisher
+6. **Multi-site support**: Works with Tokybook and many other sites
+7. **Settings**: Persistent in-app settings — download path, conversion preferences
+
+### Embedded Metadata
+
+Every downloaded chapter is tagged automatically so your audiobook player displays the right information:
+
+| Tag | Source |
+|-----|--------|
+| Cover art | Fetched from the book page and embedded as attached picture |
+| Author | Read from original MP3 tags first, then extracted from the site's structured data or page title |
+| Narrator | Extracted where available (Tokybook and AudioAZ carry this natively) |
+| Year | Read from original MP3 tags (publication year is often embedded in the source file) |
+| Chapter title | File name or track title from the playlist |
+| Track number | Chapter position and total count (e.g. `3/24`) |
+| Genre | Always set to `Audiobook` |
+| Description | Read from original MP3 tags first, then extracted from book synopsis on the page |
+| Publisher | Where available (Tokybook carries this natively) |
 
 ## Usage
 
