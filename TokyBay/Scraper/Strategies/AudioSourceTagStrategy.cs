@@ -7,7 +7,7 @@ using TokyBay.Services;
 
 namespace TokyBay.Scraper.Strategies
 {
-    public partial class GoldenAudiobookStrategy(
+    public partial class AudioSourceTagStrategy(
         IAnsiConsole console,
         IHttpService httpService,
         ISettingsService settingsService,
@@ -20,15 +20,20 @@ namespace TokyBay.Scraper.Strategies
         [GeneratedRegex(@"\bsrc=""([^""]+)""")]
         private static partial Regex SrcAttributeRegex();
 
+        // Matches <a href="...mp3"> links
+        [GeneratedRegex(@"<a\b[^>]*\bhref=""([^""]+\.mp3[^""]*?)""[^>]*>", RegexOptions.IgnoreCase)]
+        private static partial Regex AnchorMp3Regex();
+
         public override bool CanHandle(string bookUrl)
         {
-            return bookUrl.Contains("goldenaudiobook.net", StringComparison.OrdinalIgnoreCase)
-                || bookUrl.Contains("fulllengthaudiobooks.net", StringComparison.OrdinalIgnoreCase)
+            return bookUrl.Contains("appaudiobooks.com", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("audiozaic.com", StringComparison.OrdinalIgnoreCase)
                 || bookUrl.Contains("bigaudiobooks.net", StringComparison.OrdinalIgnoreCase)
-                || bookUrl.Contains("findaudiobook.com", StringComparison.OrdinalIgnoreCase)
                 || bookUrl.Contains("bookaudiobook.net", StringComparison.OrdinalIgnoreCase)
-                || bookUrl.Contains("hotaudiobooks.com", StringComparison.OrdinalIgnoreCase)
-                || bookUrl.Contains("audiozaic.com", StringComparison.OrdinalIgnoreCase);
+                || bookUrl.Contains("findaudiobook.com", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("fulllengthaudiobooks.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("goldenaudiobook.net", StringComparison.OrdinalIgnoreCase)
+                || bookUrl.Contains("hotaudiobooks.com", StringComparison.OrdinalIgnoreCase);
         }
 
         public override async Task DownloadBookAsync(string bookUrl)
@@ -62,13 +67,13 @@ namespace TokyBay.Scraper.Strategies
                 .StartAsync("Preparing download...", async ctx =>
                 {
                     ctx.Status("Fetching page...");
-                    metadata = await GetChapterUrlsAsync(bookUrl);
+                    metadata = await GetChapterUrlsAsync(bookUrl, ctx);
                 });
 
             return metadata;
         }
 
-        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl)
+        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl, StatusContext ctx)
         {
             try
             {
@@ -77,29 +82,47 @@ namespace TokyBay.Scraper.Strategies
 
                 var html = await response.Content.ReadAsStringAsync();
 
-                var chapterUrls = AudioSourceTagRegex()
-                    .Matches(html)
-                    .Select(m => SrcAttributeRegex().Match(m.Value))
-                    .Where(m => m.Success)
-                    .Select(m => m.Groups[1].Value)
-                    .ToList();
+                var chapterUrls = ExtractFromSourceTags(html);
 
                 if (chapterUrls.Count == 0)
-                {
-                    return null;
-                }
+                    chapterUrls = ExtractFromAnchorLinks(html);
 
-                return new SimpleAudiobookMetadata
+                if (chapterUrls.Count == 0)
+                    return null;
+
+                var result = new SimpleAudiobookMetadata
                 {
-                    Title = ExtractTitleFromH1(html),
+                    Title = CleanupBookTitle(ExtractTitleFromH1(html)),
                     ChapterUrls = chapterUrls
                 };
+                await EnrichFromFirstTrackTagsAsync(result, ctx);
+                ExtractCommonMetadata(html, result);
+                return result;
             }
             catch (Exception ex)
             {
                 _console.MarkupLine($"[red]Error fetching chapter URLs: {ex.Message}[/]");
                 return null;
             }
+        }
+
+        private static List<string> ExtractFromSourceTags(string html)
+        {
+            return AudioSourceTagRegex()
+                .Matches(html)
+                .Select(m => SrcAttributeRegex().Match(m.Value))
+                .Where(m => m.Success)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+        }
+
+        private static List<string> ExtractFromAnchorLinks(string html)
+        {
+            return AnchorMp3Regex()
+                .Matches(html)
+                .Select(m => m.Groups[1].Value)
+                .Distinct()
+                .ToList();
         }
     }
 }

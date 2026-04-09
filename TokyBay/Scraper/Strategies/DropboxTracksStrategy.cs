@@ -6,7 +6,7 @@ using TokyBay.Services;
 
 namespace TokyBay.Scraper.Strategies
 {
-    public class ZAudiobooksStrategy(
+    public class DropboxTracksStrategy(
         IAnsiConsole console,
         IHttpService httpService,
         ISettingsService settingsService,
@@ -16,8 +16,8 @@ namespace TokyBay.Scraper.Strategies
 
         public override bool CanHandle(string bookUrl)
         {
-            return bookUrl.Contains("freeaudiobooks", StringComparison.OrdinalIgnoreCase) ||
-                   bookUrl.Contains("zaudiobooks", StringComparison.OrdinalIgnoreCase);
+            return bookUrl.Contains("freeaudiobooks.top", StringComparison.OrdinalIgnoreCase) ||
+                   bookUrl.Contains("zaudiobooks.com", StringComparison.OrdinalIgnoreCase);
         }
 
         public override async Task DownloadBookAsync(string bookUrl)
@@ -53,14 +53,14 @@ namespace TokyBay.Scraper.Strategies
                 .SpinnerStyle(Style.Parse("blue bold"))
                 .StartAsync("Preparing download...", async ctx =>
                 {
-                    ctx.Status("Getting title and chapters...");
-                    metadata = await GetChapterUrlsAsync(bookUrl);
+                    ctx.Status("Fetching page...");
+                    metadata = await GetChapterUrlsAsync(bookUrl, ctx);
                 });
 
             return metadata;
         }
 
-        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl)
+        private async Task<SimpleAudiobookMetadata?> GetChapterUrlsAsync(string bookUrl, StatusContext ctx)
         {
             try
             {
@@ -110,11 +110,14 @@ namespace TokyBay.Scraper.Strategies
                     }
                 }
 
-                return new SimpleAudiobookMetadata
+                var result = new SimpleAudiobookMetadata
                 {
-                    Title = ExtractTitleFromH1(html),
+                    Title = CleanupBookTitle(ExtractTitleFromH1(html)),
                     ChapterUrls = chapterUrls
                 };
+                await EnrichFromFirstTrackTagsAsync(result, ctx);
+                ExtractCommonMetadata(html, result);
+                return result;
             }
             catch (Exception ex)
             {

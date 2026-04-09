@@ -20,10 +20,12 @@ C# .NET 10 console app for scraping and converting audiobooks (M4B/MP3) from mul
 IScraperStrategy                          (Scraper/Abstractions/)
     └── BaseScraperStrategy               (Scraper/Base/)
             ├── TokybookStrategy          (Scraper/Strategies/) — tokybook.com
-            ├── ZAudiobooksStrategy       (Scraper/Strategies/) — zaudiobooks / freeaudiobooks.top
-            ├── GoldenAudiobookStrategy   (Scraper/Strategies/) — all sites with `<source type="audio/mpeg">` structure:
+            ├── DropboxTracksStrategy     (Scraper/Strategies/) — sites with JS `tracks = [{ chapter_link_dropbox }]` structure:
+            │                             zaudiobooks.com, freeaudiobooks.top
+            ├── AudioSourceTagStrategy    (Scraper/Strategies/) — sites with `<source type="audio/mpeg">` or `<a href="*.mp3">` structure:
             │                             goldenaudiobook.net, fulllengthaudiobooks.net, bigaudiobooks.net,
-            │                             findaudiobook.com, bookaudiobook.net, hotaudiobooks.com, audiozaic.com
+            │                             findaudiobook.com, bookaudiobook.net, hotaudiobooks.com, audiozaic.com,
+            │                             appaudiobooks.com
             ├── PlaylistAudiobookStrategy (Scraper/Strategies/) — all sites with `data-playlist` JSON attribute:
             │                             hdaudiobooks.net
             └── AudioAzStrategy           (Scraper/Strategies/) — Next.js site with tracks JSON in streaming data:
@@ -44,16 +46,47 @@ Downloads and conversions run decoupled via `Channel<T>` + `SemaphoreSlim`:
 ### Track Types
 
 - `SegmentedTrackData` — for HLS streams (`.m3u8` → `.ts` segments → merge via FFmpeg concat)
-- `DirectFileTrackData` — for direct MP3/audio downloads (zaudiobooks, goldenaudiobook); conversion is skipped when source file is already in the target format
+- `DirectFileTrackData` — for direct MP3/audio downloads (zaudiobooks, goldenaudiobook); when the source is already in the target format, a copy-conversion runs to embed metadata without re-encoding
+
+### Metadata Pipeline
+
+`BaseScraperStrategy` provides shared metadata infrastructure used by all strategies.
+
+For all non-Tokybook strategies, metadata is collected in two stages before downloading:
+
+**Stage 1 — MP3 tag enrichment** (`EnrichFromFirstTrackTagsAsync`):
+- Runs `ffprobe` on the first chapter URL to read existing ID3 tags without downloading the file
+- Maps: `artist` → `Author`, `date` → `Year`, `comment` → `Description` (skips chapter references like "Chapter 1")
+- Only fills empty fields — never overwrites
+
+**Stage 2 — HTML extraction** (`ExtractCommonMetadata`):
+- Only fills fields still empty after Stage 1
+- `og:image` → `CoverArtUrl`
+- `og:description` → `Description`
+- `<script type="application/ld+json">` with `@type:"Audiobook"` → all fields (AudioAZ)
+- `ld+json` `headline` field → author via `ExtractAuthorFromHeadline()` (WordPress/Yoast sites)
+- `<link rel="preload" as="image">` → `CoverArtUrl` fallback (fulllengthaudiobooks, appaudiobooks)
+- H1 title → author as last resort
+
+Other shared helpers:
+- `DownloadCoverArtAsync(url, folder)` — downloads cover once to `_cover.{ext}`, returns temp path
+- `BuildMetadataParams(bookMetadata, trackData, hasCoverArt)` — returns FFmpeg `-metadata` flags (title, album, artist, album_artist, track, genre, comment, publisher, date, cover art)
+- Cover art is passed to FFmpeg as a second input (`-map 0:a -map 1:v -c:v copy -disposition:v attached_pic`)
+- Cover art temp file is always cleaned up via `finally` after the conversion pipeline completes
+
+**Tokybook** gets richer metadata directly from the `post-details` API response (`authors`, `narrators`, `coverImage`, `description`, `publisher`) — no HTML scraping or ffprobe needed.
 
 ### Data Model
 
 ```
 AudiobookMetadata (abstract)
+│   Title, FolderPath
+│   Author, Narrator, CoverArtUrl, Description, Publisher, Year   ← populated by ffprobe tags, HTML, or API response
 ├── SimpleAudiobookMetadata       — ChapterUrls: List<string>
 └── StreamingAudiobookMetadata    — Tracks: List<TrackInfo>, StreamToken, AudioBookId
 
 TrackData (abstract)
+│   TrackTitle, SanitizedTitle, TrackNumber, TotalTracks
 ├── SegmentedTrackData            — TempFolder, FolderPath, TsSegments: List<string>
 └── DirectFileTrackData           — FilePath, FolderPath
 
@@ -114,7 +147,8 @@ Registration in `Program.cs` → `ConfigureServices()` and `ScraperServiceExtens
 1. Create a new class in `TokyBay/Scraper/Strategies/` extending `BaseScraperStrategy`
 2. Implement `CanHandle(string url)` — URL-based detection
 3. Implement `DownloadBookAsync(string url)` — fetch metadata, then call `ProcessTracksInParallelAsync` or `ProcessDirectFilesInParallelAsync`
-4. Register in `ScraperServiceExtensions.cs`:
+4. In the metadata fetch method, call `ExtractCommonMetadata(html, metadata)` after building the `SimpleAudiobookMetadata` object — this fills cover art, author, description automatically from og-tags and ld+json
+5. Register in `ScraperServiceExtensions.cs`:
    ```csharp
    services.AddTransient<IScraperStrategy, NewStrategy>();
    ```

@@ -104,9 +104,23 @@ namespace TokyBay.Scraper.Strategies
                         return;
                     }
 
+                    var authors = (postDetails["authors"] as JArray)
+                        ?.Select(a => a["name"]?.ToString() ?? string.Empty)
+                        .Where(n => !string.IsNullOrEmpty(n))
+                        .ToList() ?? [];
+                    var narrators = (postDetails["narrators"] as JArray)
+                        ?.Select(n => n["name"]?.ToString() ?? string.Empty)
+                        .Where(n => !string.IsNullOrEmpty(n))
+                        .ToList() ?? [];
+
                     metadata = new StreamingAudiobookMetadata
                     {
                         Title = bookTitle,
+                        Author = string.Join(", ", authors),
+                        Narrator = string.Join(", ", narrators),
+                        CoverArtUrl = postDetails["coverImage"]?.ToString() ?? string.Empty,
+                        Description = StripHtml(postDetails["description"]?.ToString() ?? string.Empty),
+                        Publisher = postDetails["publisher"]?.ToString() ?? string.Empty,
                         AudioBookId = audioBookId,
                         StreamToken = streamToken,
                         Tracks = tracks.Select(t => new TrackInfo
@@ -122,6 +136,12 @@ namespace TokyBay.Scraper.Strategies
 
         private async Task ProcessTracksInParallelAsync(StreamingAudiobookMetadata metadata, string folderPath)
         {
+            var coverArtPath = !string.IsNullOrEmpty(metadata.CoverArtUrl)
+                ? await DownloadCoverArtAsync(metadata.CoverArtUrl, folderPath)
+                : null;
+
+            try
+            {
             var conversionChannel = Channel.CreateBounded<SegmentedTrackData>(new BoundedChannelOptions(10)
             {
                 FullMode = BoundedChannelFullMode.Wait
@@ -202,7 +222,7 @@ namespace TokyBay.Scraper.Strategies
 
                                 try
                                 {
-                                    await ConvertSegmentedTrackAsync(track);
+                                    await ConvertSegmentedTrackAsync(track, metadata, coverArtPath);
 
                                     lock (lockObj)
                                     {
@@ -229,6 +249,12 @@ namespace TokyBay.Scraper.Strategies
                     conversionChannel.Writer.Complete();
                     await Task.WhenAll(conversionTasks);
                 });
+            }
+            finally
+            {
+                if (coverArtPath != null && File.Exists(coverArtPath))
+                    File.Delete(coverArtPath);
+            }
         }
 
         private async Task<SegmentedTrackData?> DownloadTrackWithProgressAsync(
@@ -372,7 +398,8 @@ namespace TokyBay.Scraper.Strategies
             }
         }
 
-        private async Task ConvertSegmentedTrackAsync(SegmentedTrackData track)
+        private async Task ConvertSegmentedTrackAsync(SegmentedTrackData track,
+            StreamingAudiobookMetadata? bookMetadata = null, string? coverArtPath = null)
         {
             try
             {
@@ -385,13 +412,13 @@ namespace TokyBay.Scraper.Strategies
                 if (_settings.ConvertToMp3)
                 {
                     var mp3Output = Path.Combine(track.FolderPath, $"{track.SanitizedTitle}.mp3");
-                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, mp3Output, "-c:a libmp3lame -b:a 128k");
+                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, mp3Output, "-c:a libmp3lame -b:a 128k", bookMetadata, track, coverArtPath);
                 }
 
                 if (_settings.ConvertToM4b)
                 {
                     var m4bOutput = Path.Combine(track.FolderPath, $"{track.SanitizedTitle}.m4b");
-                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, m4bOutput, "-c:a aac -b:a 64k");
+                    await MergeTsSegmentsAsync(track.TempFolder, track.TsSegments, m4bOutput, "-c:a aac -b:a 64k", bookMetadata, track, coverArtPath);
                 }
 
                 SafeDeleteDirectory(track.TempFolder);
