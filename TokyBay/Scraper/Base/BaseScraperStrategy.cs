@@ -53,6 +53,9 @@ namespace TokyBay.Scraper.Base
         [GeneratedRegex(@"<[^>]+>")]
         private static partial Regex HtmlTagsRegex();
 
+        [GeneratedRegex(@"\s*\[(Listen|Download)\]", RegexOptions.IgnoreCase)]
+        private static partial Regex BracketNavLabelRegex();
+
         private static readonly string[] _headlineSuffixes =
             ["Audiobook", "Audio Book", "Free", "Online", "Streaming", "Download", "(AUDIOBOOK)"];
 
@@ -72,6 +75,9 @@ namespace TokyBay.Scraper.Base
         protected static string CleanupBookTitle(string headline)
         {
             if (string.IsNullOrEmpty(headline)) return headline;
+
+            // Strip bracket navigation labels added by some sites (e.g. audiozaic.com: "[Listen][Download]")
+            headline = BracketNavLabelRegex().Replace(headline, "").Trim();
 
             // Pattern: "Title [Audiobook] by Author" → title is everything before " by "
             var byIndex = headline.IndexOf(" by ", StringComparison.OrdinalIgnoreCase);
@@ -401,6 +407,18 @@ namespace TokyBay.Scraper.Base
             if (!string.IsNullOrEmpty(metadata.CoverArtUrl))
                 coverArtPath = await DownloadCoverArtAsync(metadata.CoverArtUrl, folderPath);
 
+            var expectedM4bTracks = metadata.ChapterUrls
+                .Select((url, i) =>
+                {
+                    var trackTitle = Path.GetFileName(new Uri(url.Split('?')[0]).LocalPath);
+                    return (
+                        TrackNumber: i + 1,
+                        FilePath: Path.ChangeExtension(Path.Combine(folderPath, trackTitle), ".m4b"),
+                        Title: GetChapterDisplayTitle(trackTitle, i + 1)
+                    );
+                })
+                .ToList();
+
             try
             {
                 var conversionChannel = Channel.CreateBounded<DirectFileTrackData>(new BoundedChannelOptions(10)
@@ -428,19 +446,17 @@ namespace TokyBay.Scraper.Base
                         var downloadTasks = metadata.ChapterUrls.Select((chapterUrl, index) => Task.Run(async () =>
                         {
                             var trackTitle = Path.GetFileName(new Uri(chapterUrl.Split('?')[0]).LocalPath);
-                            var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(trackTitle)}", autoStart: false);
 
                             await downloadSemaphore.WaitAsync();
+                            var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(trackTitle)}");
+                            DirectFileTrackData? trackData = null;
                             try
                             {
-                                await Task.Delay(100 * (index + 1));
-                                progressTask.StartTask();
-
                                 var filePath = await DownloadDirectFileWithProgressAsync(chapterUrl, trackTitle, folderPath, progressTask);
 
                                 if (!string.IsNullOrEmpty(filePath))
                                 {
-                                    var trackData = new DirectFileTrackData
+                                    trackData = new DirectFileTrackData
                                     {
                                         FilePath = filePath,
                                         FolderPath = folderPath,
@@ -449,9 +465,6 @@ namespace TokyBay.Scraper.Base
                                         TrackNumber = index + 1,
                                         TotalTracks = totalTracks
                                     };
-
-                                    await conversionChannel.Writer.WriteAsync(trackData);
-
                                     lock (lockObj)
                                     {
                                         completedDownloads++;
@@ -471,6 +484,9 @@ namespace TokyBay.Scraper.Base
                             {
                                 downloadSemaphore.Release();
                             }
+
+                            if (trackData != null)
+                                await conversionChannel.Writer.WriteAsync(trackData);
                         })).ToList();
 
                         var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
@@ -510,6 +526,21 @@ namespace TokyBay.Scraper.Base
                         conversionChannel.Writer.Complete();
                         await Task.WhenAll(conversionTasks);
                     });
+
+                if (_settings.ConvertToM4b && metadata.ChapterUrls.Count > 1)
+                {
+                    var availableTracks = expectedM4bTracks
+                        .Where(t => File.Exists(t.FilePath))
+                        .ToList();
+
+                    if (availableTracks.Count > 1)
+                    {
+                        _console.MarkupLine("[blue]Combining chapters to single M4B with chapter markers...[/]");
+                        await CombineTracksToSingleM4bAsync(availableTracks, folderPath, metadata.Title, metadata, coverArtPath);
+                        foreach (var track in availableTracks)
+                            File.Delete(track.FilePath);
+                    }
+                }
             }
             finally
             {
@@ -711,6 +742,198 @@ namespace TokyBay.Scraper.Base
                 conversion.AddParameter(metaParams);
             conversion.SetOutput(outputFile);
             await conversion.Start();
+        }
+
+        protected static string GetChapterDisplayTitle(string trackTitle, int trackNumber)
+        {
+            var ext = Path.GetExtension(trackTitle);
+            if (!string.IsNullOrEmpty(ext))
+            {
+                var nameWithoutExt = Path.GetFileNameWithoutExtension(trackTitle);
+                if (int.TryParse(nameWithoutExt, out _))
+                    return $"Chapter {trackNumber}";
+                return nameWithoutExt.Replace("_", " ").Trim();
+            }
+            return trackTitle;
+        }
+
+        private static string EscapeFfmetadata(string value) =>
+            value.Replace("\\", "\\\\").Replace("=", "\\=").Replace("#", "\\#")
+                 .Replace(";", "\\;").Replace("\n", "\\\n").Replace("\r", "");
+
+        protected async Task<bool> HasChapterTagsAsync(string filePath)
+        {
+            if (string.IsNullOrEmpty(_settings.FFmpegDirectory)) return false;
+
+            var ffprobeName = OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe";
+            var ffprobePath = Path.Combine(_settings.FFmpegDirectory, ffprobeName);
+            if (!File.Exists(ffprobePath)) return false;
+
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = ffprobePath,
+                        Arguments = $"-v quiet -print_format json -show_chapters \"{filePath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                if (string.IsNullOrWhiteSpace(output)) return false;
+
+                var json = JObject.Parse(output);
+                var chapters = json["chapters"] as JArray;
+                return chapters != null && chapters.Count > 0;
+            }
+            catch { }
+
+            return false;
+        }
+
+        private async Task<long> GetTrackDurationMsAsync(string filePath)
+        {
+            if (string.IsNullOrEmpty(_settings.FFmpegDirectory)) return 0;
+
+            var ffprobeName = OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe";
+            var ffprobePath = Path.Combine(_settings.FFmpegDirectory, ffprobeName);
+            if (!File.Exists(ffprobePath)) return 0;
+
+            try
+            {
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = ffprobePath,
+                        Arguments = $"-v quiet -print_format json -show_entries format=duration \"{filePath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                if (string.IsNullOrWhiteSpace(output)) return 0;
+
+                var json = JObject.Parse(output);
+                var durationStr = json["format"]?["duration"]?.ToString();
+                if (double.TryParse(durationStr, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var duration))
+                    return (long)(duration * 1000);
+            }
+            catch { }
+
+            return 0;
+        }
+
+        protected async Task CombineTracksToSingleM4bAsync(
+            List<(int TrackNumber, string FilePath, string Title)> tracks,
+            string outputFolder,
+            string bookTitle,
+            AudiobookMetadata? bookMetadata,
+            string? coverArtPath)
+        {
+            var tempDir = Path.Combine(outputFolder, $"_combine_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                _console.MarkupLine("[blue]Reading chapter durations...[/]");
+
+                var durations = new List<long>();
+                foreach (var (_, filePath, _) in tracks)
+                    durations.Add(await GetTrackDurationMsAsync(filePath));
+
+                // Build FFMETADATA file with book metadata + chapter markers
+                var metaLines = new List<string> { ";FFMETADATA1" };
+                if (bookMetadata != null)
+                {
+                    if (!string.IsNullOrEmpty(bookMetadata.Title))
+                    {
+                        metaLines.Add($"title={EscapeFfmetadata(bookMetadata.Title)}");
+                        metaLines.Add($"album={EscapeFfmetadata(bookMetadata.Title)}");
+                    }
+                    if (!string.IsNullOrEmpty(bookMetadata.Author))
+                        metaLines.Add($"artist={EscapeFfmetadata(bookMetadata.Author)}");
+                    if (!string.IsNullOrEmpty(bookMetadata.Narrator))
+                        metaLines.Add($"album_artist={EscapeFfmetadata(bookMetadata.Narrator)}");
+                    metaLines.Add("genre=Audiobook");
+                    if (!string.IsNullOrEmpty(bookMetadata.Publisher))
+                        metaLines.Add($"publisher={EscapeFfmetadata(bookMetadata.Publisher)}");
+                    if (!string.IsNullOrEmpty(bookMetadata.Year))
+                        metaLines.Add($"date={EscapeFfmetadata(bookMetadata.Year)}");
+                    if (!string.IsNullOrEmpty(bookMetadata.Description))
+                    {
+                        var desc = StripHtml(bookMetadata.Description);
+                        if (desc.Length > 500) desc = desc[..500];
+                        metaLines.Add($"comment={EscapeFfmetadata(desc)}");
+                    }
+                }
+
+                long cursor = 0;
+                for (int i = 0; i < tracks.Count; i++)
+                {
+                    var duration = durations[i];
+                    metaLines.Add(string.Empty);
+                    metaLines.Add("[CHAPTER]");
+                    metaLines.Add("TIMEBASE=1/1000");
+                    metaLines.Add($"START={cursor}");
+                    metaLines.Add($"END={cursor + duration}");
+                    metaLines.Add($"title={EscapeFfmetadata(tracks[i].Title)}");
+                    cursor += duration;
+                }
+
+                var metaFile = Path.Combine(tempDir, "metadata.txt");
+                await File.WriteAllLinesAsync(metaFile, metaLines);
+
+                // Build concat.txt
+                var concatFile = Path.Combine(tempDir, "concat.txt");
+                var concatLines = tracks
+                    .Select(t => $"file '{t.FilePath.Replace("'", "'\\''")}'")
+                    .ToList();
+                await File.WriteAllLinesAsync(concatFile, concatLines);
+
+                var sanitizedTitle = SanitizeName(bookTitle);
+                var outputFile = Path.Combine(outputFolder, $"{sanitizedTitle}.m4b");
+                var hasCover = !string.IsNullOrEmpty(coverArtPath) && File.Exists(coverArtPath);
+
+                IConversion conversion = FFmpeg.Conversions.New();
+                conversion.AddParameter($"-f concat -safe 0 -i \"{concatFile}\"");
+                if (hasCover)
+                {
+                    conversion.AddParameter($"-i \"{coverArtPath}\"");
+                    conversion.AddParameter($"-i \"{metaFile}\"");
+                    conversion.AddParameter("-map_metadata 2 -map 0:a -map 1:v");
+                    conversion.AddParameter("-c:a copy -c:v copy -disposition:v attached_pic");
+                }
+                else
+                {
+                    conversion.AddParameter($"-i \"{metaFile}\"");
+                    conversion.AddParameter("-map_metadata 1 -map 0:a");
+                    conversion.AddParameter("-c:a copy");
+                }
+                conversion.SetOutput(outputFile);
+                await conversion.Start();
+
+                _console.MarkupLine($"[green]Combined M4B with {tracks.Count} chapters:[/] {Markup.Escape(Path.GetFileName(outputFile))}");
+            }
+            finally
+            {
+                SafeDeleteDirectory(tempDir);
+            }
         }
 
         protected async Task<T?> RetryAsync<T>(Func<Task<T>> action, int maxRetries = 3, int delayMs = 1000)
