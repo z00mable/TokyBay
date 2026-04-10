@@ -24,6 +24,10 @@ namespace TokyBay.Scraper.Strategies
         [GeneratedRegex(@"<a\b[^>]*\bhref=""([^""]+\.mp3[^""]*?)""[^>]*>", RegexOptions.IgnoreCase)]
         private static partial Regex AnchorMp3Regex();
 
+        // Matches audiozaic.com file-audio intermediate page URL in a button onclick (e.g. window.open('https://audiozaic.com/file-audio?slug32=3556', '_blank'))
+        [GeneratedRegex(@"window\.open\('(https://audiozaic\.com/file-audio[^']+)'", RegexOptions.IgnoreCase)]
+        private static partial Regex AudiozaicFileAudioRegex();
+
         public override bool CanHandle(string bookUrl)
         {
             return bookUrl.Contains("appaudiobooks.com", StringComparison.OrdinalIgnoreCase)
@@ -86,6 +90,22 @@ namespace TokyBay.Scraper.Strategies
 
                 if (chapterUrls.Count == 0)
                     chapterUrls = ExtractFromAnchorLinks(html);
+
+                // Fallback for audiozaic.com: pages without direct MP3 sources redirect to a /file-audio/?slug32=X page
+                if (chapterUrls.Count == 0)
+                {
+                    var fileAudioMatch = AudiozaicFileAudioRegex().Match(html);
+                    if (fileAudioMatch.Success)
+                    {
+                        ctx.Status("Fetching file-audio page...");
+                        var fileAudioResponse = await _httpService.GetAsync(fileAudioMatch.Groups[1].Value);
+                        fileAudioResponse.EnsureSuccessStatusCode();
+                        var fileAudioHtml = await fileAudioResponse.Content.ReadAsStringAsync();
+                        chapterUrls = ExtractFromSourceTags(fileAudioHtml);
+                        if (chapterUrls.Count == 0)
+                            chapterUrls = ExtractFromAnchorLinks(fileAudioHtml);
+                    }
+                }
 
                 if (chapterUrls.Count == 0)
                     return null;

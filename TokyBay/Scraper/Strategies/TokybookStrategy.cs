@@ -165,15 +165,14 @@ namespace TokyBay.Scraper.Strategies
                 {
                     var downloadTasks = metadata.Tracks.Select((track, index) => Task.Run(async () =>
                     {
-                        var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}", autoStart: false);
-
                         await downloadSemaphore.WaitAsync();
+                        var progressTask = ctx.AddTask($"[green]DL {index + 1}/{totalTracks}[/] {Markup.Escape(track.TrackTitle)}");
+                        SegmentedTrackData? downloadedTrack = null;
                         try
                         {
                             await Task.Delay(10 * (index + 1));
-                            progressTask.StartTask();
 
-                            var downloadedTrack = await DownloadTrackWithProgressAsync(
+                            downloadedTrack = await DownloadTrackWithProgressAsync(
                                 metadata.AudioBookId,
                                 metadata.StreamToken,
                                 track.Src,
@@ -185,8 +184,6 @@ namespace TokyBay.Scraper.Strategies
 
                             if (downloadedTrack != null)
                             {
-                                await conversionChannel.Writer.WriteAsync(downloadedTrack);
-
                                 lock (lockObj)
                                 {
                                     completedDownloads++;
@@ -210,6 +207,9 @@ namespace TokyBay.Scraper.Strategies
                         {
                             downloadSemaphore.Release();
                         }
+
+                        if (downloadedTrack != null)
+                            await conversionChannel.Writer.WriteAsync(downloadedTrack);
                     })).ToList();
 
                     var conversionTasks = Enumerable.Range(0, _config.MaxParallelConversions)
@@ -249,6 +249,26 @@ namespace TokyBay.Scraper.Strategies
                     conversionChannel.Writer.Complete();
                     await Task.WhenAll(conversionTasks);
                 });
+
+                if (_settings.ConvertToM4b && metadata.Tracks.Count > 1)
+                {
+                    var availableTracks = metadata.Tracks
+                        .Select((t, i) => (
+                            TrackNumber: i + 1,
+                            FilePath: Path.Combine(folderPath, $"{SanitizeName(t.TrackTitle)}.m4b"),
+                            Title: t.TrackTitle
+                        ))
+                        .Where(x => File.Exists(x.FilePath))
+                        .ToList();
+
+                    if (availableTracks.Count > 1)
+                    {
+                        _console.MarkupLine("[blue]Combining chapters to single M4B with chapter markers...[/]");
+                        await CombineTracksToSingleM4bAsync(availableTracks, folderPath, metadata.Title, metadata, coverArtPath);
+                        foreach (var track in availableTracks)
+                            File.Delete(track.FilePath);
+                    }
+                }
             }
             finally
             {
